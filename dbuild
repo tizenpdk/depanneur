@@ -181,7 +181,7 @@ my %packs = ();
 foreach my $spec (@packs) {
     my $dist="tizen";
     my $archs="i586";
-    my $configdir="$ENV{TIZEN_BUILD_ROOT}/meta/dist-configs";
+    my $configdir="$ENV{TIZEN_BUILD_ROOT}/tools/dist-configs";
     my $config = Build::read_config_dist($dist, $archs, $configdir);
     #print Dumper($config);
     my $pack = Build::Rpm::parse($config, $spec);
@@ -376,7 +376,7 @@ my @errors = ();
                 if (@repomd != 0 ) {
                     $repos .= "--rpms $localrepo/$dist/$arch/RPMS ";
                 }
-                if (system ("sudo BUILD_ROOT=$ENV{TIZEN_BUILD_ROOT}/local/scratch BUILD_DIR=\"$ENV{'VIRTUAL_ENV'}/usr/lib/build\" build --clean --cachedir $ENV{TIZEN_BUILD_ROOT}/local/cache --dist $dist --configdir $ENV{TIZEN_BUILD_ROOT}/meta/dist-configs $repos $srpm_filename") == 0) {
+                if (system ("sudo BUILD_ROOT=$ENV{TIZEN_BUILD_ROOT}/local/scratch BUILD_DIR=\"$ENV{'VIRTUAL_ENV'}/usr/lib/build\" build --clean --cachedir $ENV{TIZEN_BUILD_ROOT}/local/cache --dist $dist --configdir $ENV{TIZEN_BUILD_ROOT}/tools/dist-configs $repos $srpm_filename") == 0) {
                     # Build was a success so move the final RPMs into the
                     # mock repo for next time.
                     system ("cp $scratchdir/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";

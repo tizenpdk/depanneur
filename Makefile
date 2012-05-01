@@ -13,6 +13,6 @@ install:
 	install -m755 -d \
 	    $(DESTDIR)$(bindir)
 	install -m755 \
-	    dbuild  \
+	    depanneur  \
 	    $(DESTDIR)$(bindir)
 

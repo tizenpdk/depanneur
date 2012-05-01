@@ -50,6 +50,7 @@ use File::Basename;
 
 my $arch = "";
 my $chain = 0;
+my $chain = 0;
 my $dist = "";
 my $dryrun = 0;
 my $help = 0;
@@ -62,6 +63,7 @@ my $suffix = "";
 GetOptions (
     "arch=s" => \$arch,
     "chain" => \$chain,
+    "build-all" => \$buildall,
     "dist=s" => \$dist,
     "dryrun" => \$dryrun,
     "help|?" => \$help,
@@ -171,8 +173,13 @@ a custom one.
 my @packs = @ARGV;
 
 # Traverse desired filesystems
-File::Find::find({wanted => \&wanted}, "$ENV{TIZEN_DEVEL_ROOT}/packages");
-
+if ($buildall) {
+    File::Find::find({wanted => \&wanted}, "$ENV{TIZEN_DEVEL_ROOT}/packages");
+} else {
+    if (@packs = 0) {
+        die("Please provide a list of packages to build.");
+    }
+}
 sub wanted {
     my ($dev,$ino,$mode,$nlink,$uid,$gid);
 

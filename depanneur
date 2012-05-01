@@ -26,13 +26,27 @@ BEGIN {
 }
 
 use strict;
+use File::Find ();
 
+# Set the variable $File::Find::dont_use_nlink if you're using AFS,
+# since AFS cheats.
+
+# for the convenience of &wanted calls, including -eval statements:
+use vars qw/*name *dir *prune/;
+*name   = *File::Find::name;
+*dir    = *File::Find::dir;
+*prune  = *File::Find::prune;
+
+sub wanted;
+
+use Cwd;
 use Getopt::Long;
 use Pod::Usage;
 use File::Temp qw(tempfile);
 use Build;
 use Build::Rpm;
 use Data::Dumper;
+use File::Basename;
 
 my $arch = "";
 my $chain = 0;
@@ -156,8 +170,37 @@ a custom one.
 
 my @packs = @ARGV;
 
-if (0 == @packs) {
-    die "specify one or more SRPMs to build on the command line\n"
+# Traverse desired filesystems
+File::Find::find({wanted => \&wanted}, "$ENV{TIZEN_DEVEL_ROOT}/packages");
+
+sub wanted {
+    my ($dev,$ino,$mode,$nlink,$uid,$gid);
+
+    /^packaging\z/s &&
+    (($dev,$ino,$mode,$nlink,$uid,$gid) = lstat($_)) &&
+    -d _
+    && fill_pacs($name);
+}
+
+
+sub fill_pacs()
+{
+    my $name = shift;
+    my $pattern = "$name/*.spec";
+    my @specs = glob $pattern;
+    foreach my $spec (@specs) {
+        my $dist="tizen";
+        my $archs="i586";
+        my $configdir="$ENV{TIZEN_BUILD_ROOT}/tools/dist-configs";
+        my $config = Build::read_config_dist($dist, $archs, $configdir);
+        my $pack = Build::Rpm::parse($config, $spec);
+
+        my $pwd = getcwd;
+        my $base = dirname($name);
+        print "Creating archive for $name\n";
+        #system("cd $base; git archive --format=tar --prefix=$pack->{name}-$pack->{version}/ HEAD | bzip2 > $name/$pack->{name}-$pack->{version}.tar.bz2; cd $pwd");
+        push(@packs, $spec);
+    }
 }
 
 # Resolve the names, dependency list, etc. of the SRPMs that were
@@ -197,6 +240,11 @@ foreach my $spec (@packs) {
         filename => $spec
     }
 }
+
+
+
+
+
 
 #print Dumper(%packs);
 

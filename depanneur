@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl 
 #
 # SMOCK - Simpler Mock
 # by Dan Berrange and Richard W.M. Jones.
@@ -48,9 +48,12 @@ use Build::Rpm;
 use Data::Dumper;
 use File::Basename;
 
+my @exclude = ();
 my $arch = "";
+my $path = "";
+my $style = "";
 my $chain = 0;
-my $chain = 0;
+my $buildall = 0;
 my $dist = "";
 my $dryrun = 0;
 my $help = 0;
@@ -63,8 +66,11 @@ my $suffix = "";
 GetOptions (
     "arch=s" => \$arch,
     "chain" => \$chain,
+    "exclude=s" => \@exclude,
     "build-all" => \$buildall,
     "dist=s" => \$dist,
+    "style=s" => \$style,
+    "path=s" => \$path,
     "dryrun" => \$dryrun,
     "help|?" => \$help,
     "keepgoing" => \$keepgoing,
@@ -170,13 +176,24 @@ a custom one.
 
 =cut
 
-my @packs = @ARGV;
 
-# Traverse desired filesystems
-if ($buildall) {
-    File::Find::find({wanted => \&wanted}, "$ENV{TIZEN_DEVEL_ROOT}/packages");
+my @packs = @ARGV;
+my $package_path = "";
+
+if ( $path == "" ) {
+    $package_path = "$ENV{TIZEN_DEVEL_ROOT}/packages";
 } else {
-    if (@packs = 0) {
+    $package_path = $path;
+}
+
+if ($buildall) {
+    if ($style eq "git") {
+        File::Find::find({wanted => \&wanted}, $path );
+    } elsif ($style eq "obs") {
+        File::Find::find({wanted => \&obs_wanted}, $path );
+    }
+} else {
+    if (@packs == 0) {
         die("Please provide a list of packages to build.");
     }
 }
@@ -189,6 +206,14 @@ sub wanted {
     && fill_pacs($name);
 }
 
+sub obs_wanted {
+    /^.*\.spec\z/s && obs_pacs($name);
+}
+sub obs_pacs()
+{
+    my $name = shift;
+    $name =~ m/\.osc/ || push(@packs, $name);
+}
 
 sub fill_pacs()
 {
@@ -204,15 +229,14 @@ sub fill_pacs()
 
         my $pwd = getcwd;
         my $base = dirname($name);
-        print "Creating archive for $name\n";
-        #system("cd $base; git archive --format=tar --prefix=$pack->{name}-$pack->{version}/ HEAD | bzip2 > $name/$pack->{name}-$pack->{version}.tar.bz2; cd $pwd");
+        my $filename = "$name/$pack->{name}-$pack->{version}.tar.bz2";
+        #print "Creating archive $filename\n";
+        system("cd $base; git archive --format=tar --prefix=$pack->{name}-$pack->{version}/ HEAD | bzip2 > $name/$pack->{name}-$pack->{version}.tar.bz2; cd $pwd") if ! -e $filename;
+        $filename = "$name/$pack->{name}-$pack->{version}.tar.gz";
+        system("cd $base; git archive --format=tar --prefix=$pack->{name}-$pack->{version}/ HEAD | gzip > $name/$pack->{name}-$pack->{version}.tar.gz; cd $pwd") if ! -e $filename;
         push(@packs, $spec);
     }
 }
-
-# Resolve the names, dependency list, etc. of the SRPMs that were
-# specified.
-
 
 sub get_lines
 {
@@ -233,17 +257,20 @@ foreach my $spec (@packs) {
     my $archs="i586";
     my $configdir="$ENV{TIZEN_BUILD_ROOT}/tools/dist-configs";
     my $config = Build::read_config_dist($dist, $archs, $configdir);
-    #print Dumper($config);
     my $pack = Build::Rpm::parse($config, $spec);
+    #print Dumper($pack);
     my $name = $pack->{name};
     my $version = $pack->{version};
     my $release = $pack->{release};
     my @buildrequires = $pack->{deps};
+    my @subpacks = $pack->{subpacks};
+    #print Dumper(@buildrequires);
     $packs{$name} = {
         name => $name,
         version => $version,
         release => $release,
         deps => @buildrequires,
+        subpacks => @subpacks,
         filename => $spec
     }
 }
@@ -268,99 +295,9 @@ sub is_member_of
     0;
 }
 
-sub dependency_in
-{
-    my $dep = shift;            # eg. dbus-devel
-
-    while ($dep) {
-        return $dep if is_member_of ($dep, @_);
-        my $newdep = $dep;
-        $newdep =~ s/-\w+$//;   # eg. dbus-devel -> dbus
-        last if $newdep eq $dep;
-        $dep = $newdep;
-    }
-    0;
-}
-
-foreach my $name (keys %packs) {
-    my @buildrequires = @{$packs{$name}->{deps}};
-    @buildrequires =
-        grep { $_ = dependency_in ($_, keys %packs) } @buildrequires;
-    $packs{$name}{deps} = \@buildrequires;
-}
-
-# This function takes a list of package names and sorts them into the
-# correct order for building, given the existing %packs hash
-# containing buildrequires.  We use the external 'tsort' program.
-
-sub tsort
-{
-    my @names = @_;
-
-    my ($fh, $filename) = tempfile ();
-
-    foreach my $name (@names) {
-        my @buildrequires = @{$packs{$name}->{deps}};
-        foreach (@buildrequires) {
-            print $fh "$_ $name\n"
-        }
-        # Add a self->self dependency.  This ensures that any
-        # packages which don't have or appear as a dependency of
-        # any other package still get built.
-        print $fh "$name $name\n"
-    }
-    close $fh;
-
-    get_lines "tsort $filename";
-}
-
-# Sort the initial list of package names.
-
-my @names = sort keys %packs;
-my @buildorder = tsort (@names);
-
-# With --chain flag we print the packages in groups for chain building.
-
-if ($chain) {
-    my %group = ();
-    my $name;
-
-    print 'make chain-build CHAIN="';
-
-    foreach $name (@buildorder) {
-        my @br = @{$packs{$name}->{deps}};
-
-        # If a BR occurs within the current group, then start the next group.
-        my $occurs = 0;
-        foreach (@br) {
-            if (exists $group{$_}) {
-                $occurs = 1;
-                last;
-            }
-        }
-
-        if ($occurs) {
-            %group = ();
-            print ": ";
-        }
-
-        $group{$name} = 1;
-        print "$name ";
-    }
-    print "\"\n";
-
-    exit 0
-}
 
 # With --dryrun flag we just print the packages in build order then exit.
 
-if ($dryrun) {
-    foreach (@buildorder) {
-        print "$_\n";
-    }
-
-    exit 0
-}
 
 # Now we can build each SRPM.
 
@@ -397,62 +334,98 @@ my @errors = ();
 
 # NB: Need to do the arch/distro in the outer loop to work
 # around the caching bug in mock/yum.
-        foreach my $name (@buildorder) {
-            my $version = $packs{$name}->{version};
-            my $release = $packs{$name}->{release};
-            my $srpm_filename = $packs{$name}->{filename};
 
-            $release =~ s/\.fc?\d+$//; # "1.fc9" -> "1"
-
-            # Does the built (binary) package exist already?
-            my $pattern = "$localrepo/$dist/$arch/RPMS/$name-$version-$release.*.rpm";
-            #print "pattern = $pattern\n";
-            my @binaries = glob $pattern;
-
-            if (@binaries != 0 && $overwrite) {
-                print "*** overwriting $name-$version-$release $arch $dist ***\n";
+my @done = ();
+while () {
+    my @order = ();
+    my $repo = "http://biruni.local:82/Tizen:/Base/standard/";
+    my $bd = "$ENV{'VIRTUAL_ENV'}/usr/lib/build";
+    if ( system("$bd/createrepomddeps --cachedir=$ENV{TIZEN_DEVEL_ROOT}/local/order $repo > $ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache ") == 0 && 
+        system("$bd/createrpmdeps $localrepo/$dist/$arch/RPMS >> $ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache ") == 0 ) {
+        foreach my $name (keys %packs) {
+            if( ! (grep $_ eq $name, @done) && ! (grep $_ eq $name, @exclude)) {
+                my $fn = $packs{$name}->{filename};
+                print "Checking dependencies for $name:\n";
+                if ( system("$ENV{VIRTUAL_ENV}/bin/check_unresolved --depfile $ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache --configdir $ENV{TIZEN_BUILD_ROOT}/tools/dist-configs --dist $dist --archpath i586:i686:noarch $fn") == 0 ) {
+                    push(@order, $name);
+                }
+            } else {
+                print "We handled this already: $name\n";
             }
+        }
+    }
+    if (@order == 0) {
+        last;
+    } else {
+        push(@done, @order);
+        print "First pass:\n";
+        foreach my $o (@order) {
+            print "$o\n";
+        }
+    }
+    if ($dryrun) {
+        exit 1
+    }
+    
+    foreach my $name (@order) {
+        my $version = $packs{$name}->{version};
+        my $release = $packs{$name}->{release};
+        my $srpm_filename = $packs{$name}->{filename};
 
-            if (@binaries == 0 || $overwrite)
-            {
-                # Rebuild the package.
-                print "*** building $name-$version-$release $arch $dist ***\n";
+        $release =~ s/\.fc?\d+$//; # "1.fc9" -> "1"
+
+        # Does the built (binary) package exist already?
+        my $pattern = "$localrepo/$dist/src/SRPMS/$name-$version-$release.*.rpm";
+        #print "pattern = $pattern\n";
+        my @binaries = glob $pattern;
+
+        if (@binaries != 0 && $overwrite) {
+            print "*** overwriting $name-$version-$release $arch $dist ***\n";
+        }
+
+        if (@binaries == 0 || $overwrite)
+        {
+            # Rebuild the package.
+            print "*** building $name-$version-$release $arch $dist ***\n";
+
+            createrepo ($arch, $dist);
+
+            my $scratchdir = "$ENV{TIZEN_BUILD_ROOT}/local/scratch";
+
+            $ENV{'BUILD_DIR'} = "$ENV{'VIRTUAL_ENV'}/usr/lib/build";
+            my $pattern = "$localrepo/$dist/$arch/repodata/*.xml";
+            my @repomd = glob $pattern;
+
+            my $repos = "";
+            if (@repomd != 0 ) {
+                $repos .= "--rpms $localrepo/$dist/$arch/RPMS ";
+            }
+            $repos .= "--repository $repo ";
+
+            if (system ("sudo BUILD_ROOT=$ENV{TIZEN_BUILD_ROOT}/local/scratch BUILD_DIR=\"$ENV{'VIRTUAL_ENV'}/usr/lib/build\" build  --cachedir $ENV{TIZEN_BUILD_ROOT}/local/cache --dist $dist --configdir $ENV{TIZEN_BUILD_ROOT}/tools/dist-configs   $repos $srpm_filename") == 0) {
+                # Build was a success so move the final RPMs into the
+                # mock repo for next time.
+                system ("cp $scratchdir/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";
+                system ("cp $scratchdir/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS") == 0 or die "mv";
+                my_mkdir "$localrepo/$dist/$arch/logs/$name-$version-$release";
+                system ("cp $scratchdir/.build.log $localrepo/$dist/$arch/logs/$name-$version-$release/log") == 0 or die "mv";
+                system ("cp $scratchdir/.srcfiles.cache $ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache") == 0 or die "mv";
 
                 createrepo ($arch, $dist);
 
-                my $scratchdir = "$ENV{TIZEN_BUILD_ROOT}/local/scratch";
-
-                $ENV{'BUILD_DIR'} = "$ENV{'VIRTUAL_ENV'}/usr/lib/build";
-                my $pattern = "$localrepo/$dist/$arch/repodata/*.xml";
-                my @repomd = glob $pattern;
-
-                #my $repos = "--repository http://192.168.1.41:82/Tizen:/Base/standard/ ";
-                my $repos = "--repository http://download.tz.otcshare.org/live/Tizen:/Base/standard/ ";
-                if (@repomd != 0 ) {
-                    $repos .= "--rpms $localrepo/$dist/$arch/RPMS ";
-                }
-                if (system ("sudo BUILD_ROOT=$ENV{TIZEN_BUILD_ROOT}/local/scratch BUILD_DIR=\"$ENV{'VIRTUAL_ENV'}/usr/lib/build\" build --clean --cachedir $ENV{TIZEN_BUILD_ROOT}/local/cache --dist $dist --configdir $ENV{TIZEN_BUILD_ROOT}/tools/dist-configs $repos $srpm_filename") == 0) {
-                    # Build was a success so move the final RPMs into the
-                    # mock repo for next time.
-                    system ("cp $scratchdir/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";
-                    system ("cp $scratchdir/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS") == 0 or die "mv";
-                    my_mkdir "$localrepo/$dist/$arch/logs/$name-$version-$release";
-                    system ("cp $scratchdir/.build.log $localrepo/$dist/$arch/logs/$name-$version-$release/log") == 0 or die "mv";
-
-                    createrepo ($arch, $dist);
-
-                }
-                else {
-                    push @errors, "$name-$dist-$arch$suffix";
-                    print STDERR "Build failed, return code $?\nLeaving the logs in $scratchdir\n";
-                    exit 1 unless $keepgoing;
-                }
             }
-            else
-            {
-                print "skipping $name-$version-$release $arch $dist\n";
+            else {
+                push @errors, "$name-$dist-$arch$suffix";
+                print STDERR "Build failed, return code $?\nLeaving the logs in $scratchdir\n";
+                exit 1 unless $keepgoing;
             }
         }
+        else
+        {
+            print "skipping $name-$version-$release $arch $dist\n";
+        }
+    }
+}
 
 if (@errors) {
     print "\n\n\nBuild failed for the following packages:\n";

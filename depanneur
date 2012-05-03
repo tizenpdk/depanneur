@@ -25,6 +25,7 @@ BEGIN {
   unshift @INC,  "$ENV{'VIRTUAL_ENV'}/usr/lib/build"
 }
 
+$SIG{'INT'} = \&sigIntHandler;
 use strict;
 use File::Find ();
 
@@ -52,7 +53,7 @@ my @exclude = ();
 my $arch = "";
 my $path = "";
 my $style = "";
-my $chain = 0;
+my $clean = 0;
 my $buildall = 0;
 my $dist = "";
 my $dryrun = 0;
@@ -65,7 +66,7 @@ my $suffix = "";
 
 GetOptions (
     "arch=s" => \$arch,
-    "chain" => \$chain,
+    "clean" => \$clean,
     "exclude=s" => \@exclude,
     "build-all" => \$buildall,
     "dist=s" => \$dist,
@@ -319,14 +320,14 @@ sub createrepo
     my_mkdir "$localrepo/$dist";
     my_mkdir "$localrepo/$dist/src";
     my_mkdir "$localrepo/$dist/src/SRPMS";
-    system ("cd $localrepo/$dist/src && rm -rf repodata && createrepo -q .") == 0
+    system ("cd $localrepo/$dist/src && rm -rf repodata && createrepo --changelog-limit=0 -q .") == 0
         or die "createrepo failed: $?\n";
 
     my_mkdir "$localrepo/$dist/$arch";
     my_mkdir "$localrepo/$dist/$arch/RPMS";
     my_mkdir "$localrepo/$dist/$arch/logs";
 
-    system ("cd $localrepo/$dist/$arch && rm -rf repodata && createrepo -q --exclude 'logs/*rpm' .") == 0
+    system ("cd $localrepo/$dist/$arch && rm -rf repodata && createrepo --changelog-limit=0 -q --exclude 'logs/*rpm' .") == 0
         or die "createrepo failed: $?\n";
 }
 
@@ -336,18 +337,33 @@ my @errors = ();
 # around the caching bug in mock/yum.
 
 my @done = ();
-while () {
+my %caught;
+my $packages_built = 0;
+while (1) {
     my @order = ();
-    my $repo = "http://biruni.local:82/Tizen:/Base/standard/";
+    #my $repo = "http://biruni.local:82/Tizen:/Base/standard/";
+    my $repo = "http://download.tz.otcshare.org/live/Tizen:/Base/standard/";
+
     my $bd = "$ENV{'VIRTUAL_ENV'}/usr/lib/build";
     if ( system("$bd/createrepomddeps --cachedir=$ENV{TIZEN_DEVEL_ROOT}/local/order $repo > $ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache ") == 0 && 
         system("$bd/createrpmdeps $localrepo/$dist/$arch/RPMS >> $ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache ") == 0 ) {
         foreach my $name (keys %packs) {
             if( ! (grep $_ eq $name, @done) && ! (grep $_ eq $name, @exclude)) {
                 my $fn = $packs{$name}->{filename};
-                print "Checking dependencies for $name:\n";
-                if ( system("$ENV{VIRTUAL_ENV}/bin/check_unresolved --depfile $ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache --configdir $ENV{TIZEN_BUILD_ROOT}/tools/dist-configs --dist $dist --archpath i586:i686:noarch $fn") == 0 ) {
-                    push(@order, $name);
+                my $version = $packs{$name}->{version};
+                my $release = $packs{$name}->{release};
+                my $pattern = "$localrepo/$dist/src/SRPMS/$name-$version-$release.*.rpm";
+                my @binaries = glob $pattern;
+                if (@binaries != 0 && $overwrite) {
+                    print "*** overwriting $name-$version-$release $arch $dist ***\n";
+                }
+                if (@binaries == 0 || $overwrite) {
+                    print "Checking dependencies for $name:\n";
+                    if ( system("$ENV{VIRTUAL_ENV}/bin/check_unresolved --depfile $ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache --configdir $ENV{TIZEN_BUILD_ROOT}/tools/dist-configs --dist $dist --archpath i586:i686:noarch $fn") == 0 ) {
+                        push(@order, $name);
+                    }
+                } else {
+                    print "skipping $name-$version-$release $arch $dist\n";
                 }
             } else {
                 print "We handled this already: $name\n";
@@ -372,59 +388,50 @@ while () {
         my $release = $packs{$name}->{release};
         my $srpm_filename = $packs{$name}->{filename};
 
-        $release =~ s/\.fc?\d+$//; # "1.fc9" -> "1"
+        # Rebuild the package.
+        print "*** building $name-$version-$release $arch $dist ***\n";
 
-        # Does the built (binary) package exist already?
-        my $pattern = "$localrepo/$dist/src/SRPMS/$name-$version-$release.*.rpm";
-        #print "pattern = $pattern\n";
-        my @binaries = glob $pattern;
+        my $scratchdir = "$ENV{TIZEN_BUILD_ROOT}/local/scratch";
+        $ENV{'BUILD_DIR'} = "$ENV{'VIRTUAL_ENV'}/usr/lib/build";
 
-        if (@binaries != 0 && $overwrite) {
-            print "*** overwriting $name-$version-$release $arch $dist ***\n";
+        my $repos = "";
+        if ( -d "$localrepo/$dist/$arch/RPMS" ) {
+            $repos .= "--rpms $localrepo/$dist/$arch/RPMS ";
+        }
+        $repos .= "--repository $repo ";
+
+        my $clean_option = "";
+        if ($clean) {
+           $clean_option = " --clean "; 
         }
 
-        if (@binaries == 0 || $overwrite)
-        {
-            # Rebuild the package.
-            print "*** building $name-$version-$release $arch $dist ***\n";
+        if (system ("sudo BUILD_ROOT=$ENV{TIZEN_BUILD_ROOT}/local/scratch BUILD_DIR=\"$ENV{'VIRTUAL_ENV'}/usr/lib/build\" build  --jobs 4 $clean_option --cachedir $ENV{TIZEN_BUILD_ROOT}/local/cache --dist $dist --configdir $ENV{TIZEN_BUILD_ROOT}/tools/dist-configs   $repos $srpm_filename") == 0) {
+            system ("cp $scratchdir/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";
+            system ("cp $scratchdir/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS") == 0 or die "mv";
+            my_mkdir "$localrepo/$dist/$arch/logs/$name-$version-$release";
+            system ("cp $scratchdir/.build.log $localrepo/$dist/$arch/logs/$name-$version-$release/log") == 0 or die "mv";
+            system ("cp $scratchdir/.srcfiles.cache $ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache") == 0 or die "mv";
+            $packages_built = 1;
 
-            createrepo ($arch, $dist);
-
-            my $scratchdir = "$ENV{TIZEN_BUILD_ROOT}/local/scratch";
-
-            $ENV{'BUILD_DIR'} = "$ENV{'VIRTUAL_ENV'}/usr/lib/build";
-            my $pattern = "$localrepo/$dist/$arch/repodata/*.xml";
-            my @repomd = glob $pattern;
-
-            my $repos = "";
-            if (@repomd != 0 ) {
-                $repos .= "--rpms $localrepo/$dist/$arch/RPMS ";
-            }
-            $repos .= "--repository $repo ";
-
-            if (system ("sudo BUILD_ROOT=$ENV{TIZEN_BUILD_ROOT}/local/scratch BUILD_DIR=\"$ENV{'VIRTUAL_ENV'}/usr/lib/build\" build  --cachedir $ENV{TIZEN_BUILD_ROOT}/local/cache --dist $dist --configdir $ENV{TIZEN_BUILD_ROOT}/tools/dist-configs   $repos $srpm_filename") == 0) {
-                # Build was a success so move the final RPMs into the
-                # mock repo for next time.
-                system ("cp $scratchdir/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";
-                system ("cp $scratchdir/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS") == 0 or die "mv";
-                my_mkdir "$localrepo/$dist/$arch/logs/$name-$version-$release";
-                system ("cp $scratchdir/.build.log $localrepo/$dist/$arch/logs/$name-$version-$release/log") == 0 or die "mv";
-                system ("cp $scratchdir/.srcfiles.cache $ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache") == 0 or die "mv";
-
-                createrepo ($arch, $dist);
-
-            }
-            else {
-                push @errors, "$name-$dist-$arch$suffix";
-                print STDERR "Build failed, return code $?\nLeaving the logs in $scratchdir\n";
-                exit 1 unless $keepgoing;
-            }
         }
-        else
-        {
-            print "skipping $name-$version-$release $arch $dist\n";
+        else {
+            my_mkdir "$localrepo/$dist/$arch/logs/$name-$version-$release";
+            system ("cp $scratchdir/.build.log $localrepo/$dist/$arch/logs/$name-$version-$release/log") == 0 or die "mv";
+            push @errors, "$name-$dist-$arch$suffix";
+            print STDERR "Build failed, return code $?\nLeaving the logs in $scratchdir\n";
+            exit 1 unless $keepgoing;
         }
     }
+    exit if ($caught{'INT'} == 1);
+}
+
+if ($packages_built) {
+    createrepo ($arch, $dist);
+}
+# When we get a signal, set a flag in %caught
+sub sigIntHandler {
+    print "INT caught!\n";
+    $caught{'INT'} = 1;
 }
 
 if (@errors) {

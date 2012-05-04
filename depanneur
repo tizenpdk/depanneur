@@ -54,6 +54,7 @@ my $arch = "";
 my $path = "";
 my $style = "";
 my $clean = 0;
+my $binarylist = "";
 my $buildall = 0;
 my $dist = "";
 my $dryrun = 0;
@@ -70,6 +71,7 @@ GetOptions (
     "exclude=s" => \@exclude,
     "build-all" => \$buildall,
     "dist=s" => \$dist,
+    "binary=s" => \$binarylist,
     "style=s" => \$style,
     "path=s" => \$path,
     "dryrun" => \$dryrun,
@@ -253,54 +255,77 @@ sub get_lines
 }
 
 my %packs = ();
-foreach my $spec (@packs) {
-    my $dist="tizen";
-    my $archs="i586";
-    my $configdir="$ENV{TIZEN_BUILD_ROOT}/tools/dist-configs";
-    my $config = Build::read_config_dist($dist, $archs, $configdir);
-    my $pack = Build::Rpm::parse($config, $spec);
-    #print Dumper($pack);
-    my $name = $pack->{name};
-    my $version = $pack->{version};
-    my $release = $pack->{release};
-    my @buildrequires = $pack->{deps};
-    my @subpacks = $pack->{subpacks};
-    #print Dumper(@buildrequires);
-    $packs{$name} = {
-        name => $name,
-        version => $version,
-        release => $release,
-        deps => @buildrequires,
-        subpacks => @subpacks,
-        filename => $spec
+
+sub parse_pacs {
+    my @localArray = @_;
+    foreach my $spec (@localArray) {
+        my $dist="tizen";
+        my $archs="i586";
+        my $configdir="$ENV{TIZEN_BUILD_ROOT}/tools/dist-configs";
+        my $config = Build::read_config_dist($dist, $archs, $configdir);
+        my $pack = Build::Rpm::parse($config, $spec);
+        #print Dumper($pack);
+        my $name = $pack->{name};
+        my $version = $pack->{version};
+        my $release = $pack->{release};
+        my @buildrequires = $pack->{deps};
+        my @subpacks = $pack->{subpacks};
+        #print Dumper(@buildrequires);
+        $packs{$name} = {
+            name => $name,
+            version => $version,
+            release => $release,
+            deps => @buildrequires,
+            subpacks => @subpacks,
+            filename => $spec
+        }
+    }
+}
+parse_pacs(@packs);
+
+my @tobuild = ();
+my @tofind = ();
+if ($binarylist ne "" ) {
+    if ( -e $binarylist ) {
+        open FILE, "<", $binarylist or die $!;
+        my @bins = <FILE>;
+        chomp(@bins);
+        close(FILE);
+        foreach my $b (@bins) {
+            next if $b eq "";
+            my $found = 0;
+            foreach my $name (keys %packs) {
+                my @sp = @{$packs{$name}->{subpacks}};
+                my $debuginfo = $b;
+                $debuginfo =~ s/(.*)-debuginfo/$1/;
+                $debuginfo =~ s/(.*)-debugsource/$1/;
+                $debuginfo =~ s/(.*)-docs/$1/;
+                my $nb;
+                if ($b ne $debuginfo) { 
+                    $nb = $debuginfo;
+                } else {
+                    $nb = $b;
+                }
+                if ( grep $_ eq $nb, @sp ) {
+                    my $fn = $packs{$name}->{filename};
+                    push(@tobuild, $fn);
+                    $found =1 ;
+                    last;
+                } 
+            }
+            if (!$found) {
+                push(@tofind, $b);
+            }
+        }
+
     }
 }
 
+#print "To build:\n" . Dumper(@tobuild);
+#print "To find:\n" . Dumper(@tofind);
+%packs = ();
+parse_pacs(@tobuild);
 
-
-
-
-
-#print Dumper(%packs);
-
-# We don't care about buildrequires unless they refer to other
-# packages that we are building.  So filter them on this condition.
-
-sub is_member_of
-{
-    my $item = shift;
-
-    foreach (@_) {
-        return 1 if $item eq $_;
-    }
-    0;
-}
-
-
-# With --dryrun flag we just print the packages in build order then exit.
-
-
-# Now we can build each SRPM.
 
 sub my_mkdir
 {

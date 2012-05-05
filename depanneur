@@ -88,6 +88,7 @@ my $package_path = "";
 # FIXME
 my @archs = ("i586", "i686", "noarch");
 my $configdir="$ENV{TIZEN_BUILD_ROOT}/tools/dist-configs";
+my $groupfile="$ENV{TIZEN_BUILD_ROOT}/meta/group.xml";
 my $bd = "$ENV{'VIRTUAL_ENV'}/usr/lib/build";
 
 if ( $path == "" ) {
@@ -345,25 +346,10 @@ if ($binarylist ne "" && -e $binarylist )
         print "$p, ";
     }
     print "\n";
-    foreach my $p (@tobuild) {
-        my @deps = @{$packs{$p}->{deps}};    
-        foreach my $dep (@deps) {
-            foreach my $prr (keys %repo_assist) {
-                if (grep $_ eq $dep, @{$repo_assist{$prr}->{provides}}) {
-                    my $mainp = source_of($prr, %packs);
-                    if (defined($mainp)) {
-                        push(@tobuild, $mainp);
-                        print "adding $mainp because $p needs it\n";
-                    }
-                }
-            }
-        }
-    }
-    print "Improved set:\n";
-    foreach my $p (@tobuild) {
-        print "$p, ";
-    }
-    print "\n";
+    #foreach my $p (@tobuild) {
+    #    foreach my $req (@{$repo_assist{$prr}->{requires}}) {
+    #    }
+    #}
 
     foreach my $name (@tobuild) {
         my $fn = $packs{$name}->{filename};
@@ -409,7 +395,13 @@ sub source_of {
     return undef;
 }
 
-my %to_build = parse_packs(@final);
+my %to_build = ();
+if (@packs > 0 ) {
+    %to_build = parse_packs(@packs);
+    print Dumper(%to_build);
+} else {
+    %to_build = parse_packs(@final);
+}
 
 #exit(1);
 
@@ -439,7 +431,13 @@ sub createrepo
     my_mkdir "$localrepo/$dist/$arch/RPMS";
     my_mkdir "$localrepo/$dist/$arch/logs";
 
-    system ("cd $localrepo/$dist/$arch && rm -rf repodata && createrepo --changelog-limit=0 -q --exclude 'logs/*rpm' .") == 0
+    
+    my $groups = "";
+    if ( -e $groupfile ) {
+        $groups = " --groupfile=$groupfile ";
+    }
+
+    system ("cd $localrepo/$dist/$arch && rm -rf repodata && createrepo $groups --changelog-limit=0 -q --exclude 'logs/*rpm' .") == 0
         or die "createrepo failed: $?\n";
 }
 

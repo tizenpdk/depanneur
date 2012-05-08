@@ -177,7 +177,7 @@ sub parse_packs {
             release => $release,
             deps => @buildrequires,
             subpacks => @subpacks,
-            filename => $spec
+            filename => $path_to_spec
         }
     }
     return %packs;
@@ -319,7 +319,7 @@ if ($binarylist ne "" && -e $binarylist )
             }
             if ( grep $_ eq $nb, @sp ) {
                 push(@tobuild, $name);
-                $found =1 ;
+                $found = 1 ;
                 last;
             } 
         }
@@ -528,11 +528,19 @@ while (1) {
         }
 
         if (system ("sudo BUILD_ROOT=$ENV{TIZEN_BUILD_ROOT}/local/scratch BUILD_DIR=\"$ENV{'VIRTUAL_ENV'}/usr/lib/build\" build  --jobs 4 $clean_option --cachedir $ENV{TIZEN_BUILD_ROOT}/local/cache --dist $dist --configdir $ENV{TIZEN_BUILD_ROOT}/tools/dist-configs   $repos $srpm_filename") == 0) {
+
             system ("cp $scratchdir/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";
             system ("cp $scratchdir/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS") == 0 or die "mv";
             my_mkdir "$localrepo/$dist/$arch/logs/$name-$version-$release";
             system ("cp $scratchdir/.build.log $localrepo/$dist/$arch/logs/$name-$version-$release/log") == 0 or die "mv";
             system ("cp $scratchdir/.srcfiles.cache $ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache") == 0 or die "mv";
+
+            #my $pattern = "$scratchdir/home/abuild/rpmbuild/RPMS/*/*.rpm";
+            #my @binaries = glob $pattern;
+            #foreach my $bin (@binaries) {
+            #    my $x = Build::Rpm::query($bin);
+                #print Dumper($x);
+            #}
             $packages_built = 1;
 
         }

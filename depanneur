@@ -103,15 +103,16 @@ if ($binarylist ne "") {
 
 if ($buildall) {
     if ($style eq "git") {
-        File::Find::find({wanted => \&git_wanted}, $path );
+        File::Find::find({wanted => \&git_wanted}, $package_path );
     } elsif ($style eq "obs") {
-        File::Find::find({wanted => \&obs_wanted}, $path );
+        File::Find::find({wanted => \&obs_wanted}, $package_path );
     }
 } else {
     if (@packs == 0) {
         die("Please provide a list of packages to build.");
     }
 }
+
 sub git_wanted {
     my ($dev,$ino,$mode,$nlink,$uid,$gid);
 
@@ -153,14 +154,18 @@ sub fill_pacs_from_git()
 }
 
 
-
 sub parse_packs {
     my @packs = @_;
     my %packs = ();
     foreach my $spec (@packs) {
         my $config = Build::read_config_dist($dist, "i586", $configdir);
-        my $pack = Build::Rpm::parse($config, $spec);
-        #print Dumper($pack);
+        my $path_to_spec = "";
+        if ( -e $spec ) {
+            $path_to_spec =  $spec;
+        } else {
+            $path_to_spec =  "$package_path/$spec/$spec.spec";
+        }
+        my $pack = Build::Rpm::parse($config, $path_to_spec);
         my $name = $pack->{name};
         my $version = $pack->{version};
         my $release = $pack->{release};
@@ -179,10 +184,12 @@ sub parse_packs {
 }
 
 sub expand_deps {
-    my $repo_assist = "http://download.tz.otcshare.org/live/Tizen:/Main/standard/";
     my $rpmdeps = "$ENV{TIZEN_DEVEL_ROOT}/local/order/.repo_assist.cache";
-    if (system("$bd/createrepomddeps --cachedir=$ENV{TIZEN_DEVEL_ROOT}/local/order $repo_assist > $rpmdeps ") != 0 ) {
-        return 1;
+    if ( ! -e $rpmdeps ) {
+        my $repo_assist = "http://download.tz.otcshare.org/live/Tizen:/Main/standard/";
+        if (system("$bd/createrepomddeps --cachedir=$ENV{TIZEN_DEVEL_ROOT}/local/order $repo_assist > $rpmdeps ") != 0 ) {
+            return 1;
+        }
     }
     my (%fn, %prov, %req);
 
@@ -379,6 +386,9 @@ if ($binarylist ne "" && -e $binarylist )
     foreach my $m (@tofind_2) {
         print $m . "\n";
     }
+} elsif ( $binarylist ne "") {
+    print "Cant find binary list for image\n";
+    exit 1;
 }
 
 
@@ -396,15 +406,11 @@ sub source_of {
 }
 
 my %to_build = ();
-if (@packs > 0 ) {
-    %to_build = parse_packs(@packs);
-    print Dumper(%to_build);
-} else {
+if ($binarylist ne "") {
     %to_build = parse_packs(@final);
+} else {
+    %to_build = parse_packs(@packs);
 }
-
-#exit(1);
-
 
 sub my_mkdir
 {
@@ -454,7 +460,8 @@ while (1) {
     my @order = ();
     #my $repo = "http://biruni.local:82/Tizen:/Base/standard/";
     #my $repo_assist = "http://biruni.local:82/Tizen:/Base/standard/";
-    my $repo = "http://download.tz.otcshare.org/live/Tizen:/Base/standard/";
+    #my $repo = "http://download.tz.otcshare.org/live/Tizen:/Base/standard/";
+    my $repo = "/home/nashif/devel-env/repo/";
 
     if ( system("$bd/createrepomddeps --cachedir=$ENV{TIZEN_DEVEL_ROOT}/local/order $repo > $ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache ") == 0 && 
         system("$bd/createrpmdeps $localrepo/$dist/$arch/RPMS >> $ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache ") == 0 ) {
@@ -470,9 +477,10 @@ while (1) {
                 }
                 if (@binaries == 0 || $overwrite) {
                     print "Checking dependencies for $name:\n";
-                    if ( system("$ENV{VIRTUAL_ENV}/bin/check_unresolved --depfile $ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache --configdir $ENV{TIZEN_BUILD_ROOT}/tools/dist-configs --dist $dist --archpath i586:i686:noarch $fn") == 0 ) {
+                    if ( system("$ENV{VIRTUAL_ENV}/usr/bin/check_unresolved --depfile $ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache --configdir $ENV{TIZEN_BUILD_ROOT}/tools/dist-configs --dist $dist --archpath i586:i686:noarch $fn") == 0 ) {
                         push(@order, $name);
                     }
+
                 } else {
                     print "skipping $name-$version-$release $arch $dist\n";
                 }
@@ -480,6 +488,9 @@ while (1) {
                 print "We handled this already: $name\n";
             }
         }
+    } else {
+        print "repo cache creation failed...\n";
+        exit(1);
     }
     if (@order == 0) {
         last;

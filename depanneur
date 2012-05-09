@@ -60,7 +60,17 @@ my $dist = "";
 my $dryrun = 0;
 my $help = 0;
 my $keepgoing = 0;
-my $localrepo = $ENV{TIZEN_BUILD_ROOT} . "/local/repos";
+
+my $build_root = $ENV{TIZEN_BUILD_ROOT};
+my $localrepo = "$build_root/local/repos";
+my $order_dir = "$build_root/local/order";
+my $cache_dir = "$build_root/local/cache";
+my $scratch_dir = "$build_root/local/scratch";
+my $configdir="$build_root/meta/dist-configs";
+my $groupfile="$build_root/meta/group.xml";
+my $build_dir = "$ENV{'VIRTUAL_ENV'}/usr/lib/build";
+my $config_filename = "$build_root/meta/local.conf";
+my $dist_configs = "$build_root/meta/dist-configs";
 my $man = 0;
 my $overwrite = 0;
 my $suffix = "";
@@ -83,16 +93,50 @@ GetOptions (
     "suffix=s" => \$suffix,
     );
 
+
+
+
+sub parse_config_file {
+    my ($config_line, $Name, $Value, $Config);
+
+    my ($File, $Config) = @_;
+
+    if (!open (CONFIG, "$File")) {
+        print "ERROR: Config file not found : $File";
+        exit(0);
+    }
+
+    while (<CONFIG>) {
+        $config_line=$_;
+        chop ($config_line);          # Get rid of the trailling \n
+        $config_line =~ s/^\s*//;     # Remove spaces at the start of the line
+        $config_line =~ s/\s*$//;     # Remove spaces at the end of the line
+        if ( ($config_line !~ /^#/) && ($config_line ne "") ){    # Ignore lines starting with # and blank lines
+            ($Name, $Value) = split (/=/, $config_line);          # Split each line into name value pairs
+            $$Config{$Name} = $Value;                             # Create a hash of the name value pairs
+        }
+    }
+    close(CONFIG);
+}
+
+
+
 my @packs = @ARGV;
 my $package_path = "";
 # FIXME
 my @archs = ("i586", "i686", "noarch");
-my $configdir="$ENV{TIZEN_BUILD_ROOT}/tools/dist-configs";
-my $groupfile="$ENV{TIZEN_BUILD_ROOT}/meta/group.xml";
-my $bd = "$ENV{'VIRTUAL_ENV'}/usr/lib/build";
+my %Config = ();
+&parse_config_file ($config_filename, \%Config);
+#foreach my $Config_key (keys %Config) {
+#    print "$Config_key = $Config{$Config_key}\n";
+#}
+#exit(1);
+
+
+
 
 if ( $path == "" ) {
-    $package_path = "$ENV{TIZEN_DEVEL_ROOT}/packages";
+    $package_path = "$build_root/packages";
 } else {
     $package_path = $path;
 }
@@ -184,10 +228,10 @@ sub parse_packs {
 }
 
 sub expand_deps {
-    my $rpmdeps = "$ENV{TIZEN_DEVEL_ROOT}/local/order/.repo_assist.cache";
+    my $rpmdeps = "$order_dir/.repo_assist.cache";
     if ( ! -e $rpmdeps ) {
         my $repo_assist = "http://download.tz.otcshare.org/live/Tizen:/Main/standard/";
-        if (system("$bd/createrepomddeps --cachedir=$ENV{TIZEN_DEVEL_ROOT}/local/order $repo_assist > $rpmdeps ") != 0 ) {
+        if (system("$build_dir/createrepomddeps --cachedir=$order_dir $repo_assist > $rpmdeps ") != 0 ) {
             return 1;
         }
     }
@@ -365,7 +409,7 @@ if ($binarylist ne "" && -e $binarylist )
 
     print "Still " . ($#tofind + 1 ) . " to find:\n";
     print "Check if binaries are provided by a repo\n";
-    my $rpmdeps = "$ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache";
+    my $rpmdeps = "$order_dir/.repo.cache";
     open(F, '<', $rpmdeps) || die("$rpmdeps: $!\n");
     my @bindeps = <F>;
     close(F);
@@ -461,10 +505,10 @@ while (1) {
     #my $repo = "http://biruni.local:82/Tizen:/Base/standard/";
     #my $repo_assist = "http://biruni.local:82/Tizen:/Base/standard/";
     #my $repo = "http://download.tz.otcshare.org/live/Tizen:/Base/standard/";
-    my $repo = "/home/nashif/devel-env/repo/";
+    my $repo = $Config{base_repo_url};
 
-    if ( system("$bd/createrepomddeps --cachedir=$ENV{TIZEN_DEVEL_ROOT}/local/order $repo > $ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache ") == 0 && 
-        system("$bd/createrpmdeps $localrepo/$dist/$arch/RPMS >> $ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache ") == 0 ) {
+    if ( system("$build_dir/createrepomddeps --cachedir=$order_dir $repo > $order_dir/.repo.cache ") == 0 && 
+        system("$build_dir/createrpmdeps $localrepo/$dist/$arch/RPMS >> $order_dir/.repo.cache ") == 0 ) {
         foreach my $name (keys %to_build) {
             if( ! (grep $_ eq $name, @done) && ! (grep $_ eq $name, @exclude)) {
                 my $fn = $to_build{$name}->{filename};
@@ -477,7 +521,7 @@ while (1) {
                 }
                 if (@binaries == 0 || $overwrite) {
                     print "Checking dependencies for $name:\n";
-                    if ( system("$ENV{VIRTUAL_ENV}/usr/bin/check_unresolved --depfile $ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache --configdir $ENV{TIZEN_BUILD_ROOT}/tools/dist-configs --dist $dist --archpath i586:i686:noarch $fn") == 0 ) {
+                    if ( system("$ENV{VIRTUAL_ENV}/usr/bin/check_unresolved --depfile $order_dir/.repo.cache --configdir $dist_configs --dist $dist --archpath i586:i686:noarch $fn") == 0 ) {
                         push(@order, $name);
                     }
 
@@ -513,8 +557,7 @@ while (1) {
         # Rebuild the package.
         print "*** building $name-$version-$release $arch $dist ***\n";
 
-        my $scratchdir = "$ENV{TIZEN_BUILD_ROOT}/local/scratch";
-        $ENV{'BUILD_DIR'} = "$ENV{'VIRTUAL_ENV'}/usr/lib/build";
+        $ENV{'BUILD_DIR'} = $build_dir;
 
         my $repos = "";
         if ( -d "$localrepo/$dist/$arch/RPMS" ) {
@@ -527,13 +570,13 @@ while (1) {
            $clean_option = " --clean "; 
         }
 
-        if (system ("sudo BUILD_ROOT=$ENV{TIZEN_BUILD_ROOT}/local/scratch BUILD_DIR=\"$ENV{'VIRTUAL_ENV'}/usr/lib/build\" build  --jobs 4 $clean_option --cachedir $ENV{TIZEN_BUILD_ROOT}/local/cache --dist $dist --configdir $ENV{TIZEN_BUILD_ROOT}/tools/dist-configs   $repos $srpm_filename") == 0) {
+        if (system ("sudo BUILD_ROOT=$scratch_dir BUILD_DIR=\"$build_dir\" build  --jobs 4 $clean_option --cachedir $cache_dir --dist $dist --configdir $dist_configs   $repos $srpm_filename") == 0) {
 
-            system ("cp $scratchdir/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";
-            system ("cp $scratchdir/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS") == 0 or die "mv";
+            system ("cp $scratch_dir/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";
+            system ("cp $scratch_dir/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS") == 0 or die "mv";
             my_mkdir "$localrepo/$dist/$arch/logs/$name-$version-$release";
-            system ("cp $scratchdir/.build.log $localrepo/$dist/$arch/logs/$name-$version-$release/log") == 0 or die "mv";
-            system ("cp $scratchdir/.srcfiles.cache $ENV{TIZEN_DEVEL_ROOT}/local/order/.repo.cache") == 0 or die "mv";
+            system ("cp $scratch_dir/.build.log $localrepo/$dist/$arch/logs/$name-$version-$release/log") == 0 or die "mv";
+            system ("cp $scratch_dir/.srcfiles.cache $order_dir/.repo.cache") == 0 or die "mv";
 
             #my $pattern = "$scratchdir/home/abuild/rpmbuild/RPMS/*/*.rpm";
             #my @binaries = glob $pattern;
@@ -546,9 +589,9 @@ while (1) {
         }
         else {
             my_mkdir "$localrepo/$dist/$arch/logs/$name-$version-$release";
-            system ("cp $scratchdir/.build.log $localrepo/$dist/$arch/logs/$name-$version-$release/log") == 0 or die "mv";
+            system ("cp $scratch_dir/.build.log $localrepo/$dist/$arch/logs/$name-$version-$release/log") == 0 or die "mv";
             push @errors, "$name-$dist-$arch$suffix";
-            print STDERR "Build failed, return code $?\nLeaving the logs in $scratchdir\n";
+            print STDERR "Build failed, return code $?\nLeaving the logs in $scratch_dir\n";
             exit 1 unless $keepgoing;
         }
     }

@@ -113,6 +113,10 @@ sub parse_config_file {
         $config_line =~ s/\s*$//;     # Remove spaces at the end of the line
         if ( ($config_line !~ /^#/) && ($config_line ne "") ){    # Ignore lines starting with # and blank lines
             ($Name, $Value) = split (/=/, $config_line);          # Split each line into name value pairs
+            $Name =~ s/^\s*//;
+            $Name =~ s/\s*$//;
+            $Value =~ s/\s*$//;
+            $Value =~ s/^\s*//;
             $$Config{$Name} = $Value;                             # Create a hash of the name value pairs
         }
     }
@@ -128,6 +132,7 @@ my @archs = ("i586", "i686", "noarch");
 my %Config = ();
 &parse_config_file ($config_filename, \%Config);
 #foreach my $Config_key (keys %Config) {
+#    print "$Config_key\n";
 #    print "$Config_key = $Config{$Config_key}\n";
 #}
 #exit(1);
@@ -506,8 +511,9 @@ while (1) {
     #my $repo_assist = "http://biruni.local:82/Tizen:/Base/standard/";
     #my $repo = "http://download.tz.otcshare.org/live/Tizen:/Base/standard/";
     my $repo = $Config{base_repo_url};
-
-    if ( system("$build_dir/createrepomddeps --cachedir=$order_dir $repo > $order_dir/.repo.cache ") == 0 && 
+    my $cmd = "$build_dir/createrepomddeps --cachedir=$order_dir $repo > $order_dir/.repo.cache ";
+    print $cmd . "\n";
+    if ( ( system($cmd) == 0 ) &&
         system("$build_dir/createrpmdeps $localrepo/$dist/$arch/RPMS >> $order_dir/.repo.cache ") == 0 ) {
         foreach my $name (keys %to_build) {
             if( ! (grep $_ eq $name, @done) && ! (grep $_ eq $name, @exclude)) {

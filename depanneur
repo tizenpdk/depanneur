@@ -27,6 +27,9 @@ BEGIN {
 
 $SIG{'INT'} = \&sigIntHandler;
 use strict;
+use warnings;
+use threads;
+use threads::shared;
 use File::Find ();
 
 # Set the variable $File::Find::dont_use_nlink if you're using AFS,
@@ -40,6 +43,7 @@ use vars qw/*name *dir *prune/;
 
 sub wanted;
 
+
 use Cwd;
 use Getopt::Long;
 use Pod::Usage;
@@ -49,14 +53,15 @@ use Build::Rpm;
 use Data::Dumper;
 use File::Basename;
 
+my @threads;
 my @exclude = ();
-my $arch = "";
+my $arch = "i586";
 my $path = "";
-my $style = "";
+my $style = "obs";
 my $clean = 0;
 my $binarylist = "";
 my $buildall = 0;
-my $dist = "";
+my $dist = "tizen";
 my $dryrun = 0;
 my $help = 0;
 my $keepgoing = 0;
@@ -64,14 +69,17 @@ my $keepgoing = 0;
 my $build_root = $ENV{TIZEN_BUILD_ROOT};
 my $localrepo = "$build_root/local/repos";
 my $order_dir = "$build_root/local/order";
+
+my_mkdir($order_dir);
+
 my $cache_dir = "$build_root/local/cache";
-my $scratch_dir = "$build_root/local/scratch";
 my $configdir="$build_root/meta/dist-configs";
 my $groupfile="$build_root/meta/group.xml";
 my $build_dir = "$ENV{'VIRTUAL_ENV'}/usr/lib/build";
 my $config_filename = "$build_root/meta/local.conf";
 my $dist_configs = "$build_root/meta/dist-configs";
 my $man = 0;
+my $debug = 0;
 my $overwrite = 0;
 my $suffix = "";
 
@@ -91,9 +99,11 @@ GetOptions (
     "man" => \$man,
     "overwrite" => \$overwrite,
     "suffix=s" => \$suffix,
+    "debug" => \$debug,
     );
 
 
+my $scratch_dir = "$build_root/local/scratch.$arch.0";
 
 
 sub parse_config_file {
@@ -102,7 +112,7 @@ sub parse_config_file {
     my ($File, $Config) = @_;
 
     if (!open (CONFIG, "$File")) {
-        print "ERROR: Config file not found : $File";
+        print "ERROR: Config file not found : $File\n";
         exit(0);
     }
 
@@ -138,6 +148,10 @@ my %Config = ();
 #exit(1);
 
 
+sub debug {
+    my $msg = shift;
+    print "DEBUG: $msg\n" if $debug == 1;
+}
 
 
 if ( $path == "" ) {
@@ -194,7 +208,7 @@ sub fill_pacs_from_git()
         my $pwd = getcwd;
         my $base = dirname($name);
         my $filename = "$name/$pack->{name}-$pack->{version}.tar.bz2";
-        #print "Creating archive $filename\n";
+        debug ("Creating archive $filename");
         system("cd $base; git archive --format=tar --prefix=$pack->{name}-$pack->{version}/ HEAD | bzip2 > $name/$pack->{name}-$pack->{version}.tar.bz2; cd $pwd") if ! -e $filename;
         $filename = "$name/$pack->{name}-$pack->{version}.tar.gz";
         system("cd $base; git archive --format=tar --prefix=$pack->{name}-$pack->{version}/ HEAD | gzip > $name/$pack->{name}-$pack->{version}.tar.gz; cd $pwd") if ! -e $filename;
@@ -270,7 +284,6 @@ sub expand_deps {
         $req{$1} = $2;
       } elsif (/^I:(.*?)-\d+\/\d+\/\d+: (.*)$/) {
         if ($ids{$1} && $packs_done{$1} && defined($pkgF) && defined($pkgP) && defined($pkgR)) {
-            #print STDERR  "XXXXXXXXXXXXXXXX   " . $1 . " " . $2 . "\n";
           my $i = $1;
           my $oldid = $ids{$1};
           my $newid = $2;
@@ -282,7 +295,6 @@ sub expand_deps {
           }
         } else {
           next if $ids{$1};
-          #print STDERR  "YYYYYYYYYYYYY   " . $1 . " " . $2 . "\n";
           $ids{$1} = $2;
         }
         undef $pkgF;
@@ -391,7 +403,7 @@ if ($binarylist ne "" && -e $binarylist )
                     my $mainp = source_of($prr, %packs);
                     if (defined($mainp)) {
                         push(@tobuild, $mainp);
-                        print "adding $mainp because $p needs it\n";
+                        debug("adding $mainp because $p needs it");
                     }
                 }
             }
@@ -512,7 +524,7 @@ while (1) {
     #my $repo = "http://download.tz.otcshare.org/live/Tizen:/Base/standard/";
     my $repo = $Config{base_repo_url};
     my $cmd = "$build_dir/createrepomddeps --cachedir=$order_dir $repo > $order_dir/.repo.cache ";
-    print $cmd . "\n";
+    debug($cmd);
     if ( ( system($cmd) == 0 ) &&
         system("$build_dir/createrpmdeps $localrepo/$dist/$arch/RPMS >> $order_dir/.repo.cache ") == 0 ) {
         foreach my $name (keys %to_build) {

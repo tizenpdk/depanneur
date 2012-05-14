@@ -268,8 +268,8 @@ Build::readdeps($cf, undef, \%repo);
 my @bdeps = Build::get_build($cf, $subpacks, @packdeps, @extradeps);
 
 if (!shift @bdeps) {
-  print STDERR "expansion error\n";
-  print STDERR "  $_\n" for @bdeps;
+    #print STDERR "expansion error\n";
+    #print STDERR "  $_\n" for @bdeps;
   exit(1);
 }
 

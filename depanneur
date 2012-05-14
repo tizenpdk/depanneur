@@ -24,13 +24,32 @@ BEGIN {
   unshift @INC,  "$wd";
   unshift @INC,  "$ENV{'VIRTUAL_ENV'}/usr/lib/build"
 }
+$|=1;
 
-$SIG{'INT'} = \&sigIntHandler;
+
+
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use File::Find ();
+
+# Global vars
+
+# Maximum working threads
+my $MAX_THREADS = 4;
+
+# Flag to inform all threads that application is terminating
+my $TERM:shared=0;
+
+# Prevents double detach attempts
+my $DETACHING:shared;
+
+# Signal handling
+$SIG{'INT'} = $SIG{'TERM'} = sub {
+        print("^C captured\n");
+        $TERM=1;
+};
 
 # Set the variable $File::Find::dont_use_nlink if you're using AFS,
 # since AFS cheats.
@@ -103,11 +122,11 @@ GetOptions (
     );
 
 
-my $scratch_dir = "$build_root/local/scratch.$arch.0";
+my $scratch_dir = "$build_root/local/scratch.$arch";
 
 
 sub parse_config_file {
-    my ($config_line, $Name, $Value, $Config);
+    my ($config_line, $Name, $Value);
 
     my ($File, $Config) = @_;
 
@@ -154,7 +173,7 @@ sub debug {
 }
 
 
-if ( $path == "" ) {
+if ( $path eq "" ) {
     $package_path = "$build_root/packages";
 } else {
     $package_path = $path;
@@ -491,7 +510,7 @@ sub createrepo
     my_mkdir "$localrepo/$dist";
     my_mkdir "$localrepo/$dist/src";
     my_mkdir "$localrepo/$dist/src/SRPMS";
-    system ("cd $localrepo/$dist/src && rm -rf repodata && createrepo --changelog-limit=0 -q .") == 0
+    system ("cd $localrepo/$dist/src && rm -rf repodata && createrepo --changelog-limit=0 -q . > /dev/null 2>&1 ") == 0
         or die "createrepo failed: $?\n";
 
     my_mkdir "$localrepo/$dist/$arch";
@@ -504,25 +523,116 @@ sub createrepo
         $groups = " --groupfile=$groupfile ";
     }
 
-    system ("cd $localrepo/$dist/$arch && rm -rf repodata && createrepo $groups --changelog-limit=0 -q --exclude 'logs/*rpm' .") == 0
+    system ("cd $localrepo/$dist/$arch && rm -rf repodata && createrepo $groups --changelog-limit=0 -q --exclude 'logs/*rpm' . > /dev/null 2>&1 ") == 0
         or die "createrepo failed: $?\n";
 }
 
 my @errors = ();
 
-# NB: Need to do the arch/distro in the outer loop to work
-# around the caching bug in mock/yum.
+my %workers = ();
+
+for(my $w = 0; $w < $MAX_THREADS; $w++) {
+    $workers{$w} = { 'state' => 'idle' , 'tid' => undef };
+}
+
+sub find_idle {
+    my $idle = -1;
+    foreach my $w (keys %workers) {
+        my $tid = $workers{$w}->{tid};
+        my $state = $workers{$w}->{state};
+        if (! defined(threads->object($tid))) {
+            set_idle($w);
+            $idle = $w;
+            last;
+        }
+    }
+    foreach my $w (keys %workers) {
+        if ( $workers{$w}->{state} eq 'idle' ) {
+            $idle = $w;
+            last;
+        }
+    }
+    return $idle;
+}
+
+sub set_busy {
+    my $worker = shift;
+    my $thread = shift;
+    $workers{$worker} = { 'state' => 'busy', 'tid' => $thread };
+}
+
+sub set_idle {
+    my $worker = shift;
+    $workers{$worker} = { 'state' => 'idle' , 'tid' => undef};
+}
+
+sub build_package {
+    my ($name, $thread) = @_;
+    use vars qw($repo);
+    #{
+    #    lock($DETACHING);
+    #    threads->detach() if ! threads->is_detached();
+    #}
+    #return(0);
+
+    my $version = $to_build{$name}->{version};
+    my $release = $to_build{$name}->{release};
+    my $srpm_filename = $to_build{$name}->{filename};
+
+    # Rebuild the package.
+    print "*** building $name-$version-$release $arch $dist ***\n";
+
+    $ENV{'BUILD_DIR'} = $build_dir;
+
+    my $repos = "";
+    if ( -d "$localrepo/$dist/$arch/RPMS" ) {
+        $repos .= "--rpms $localrepo/$dist/$arch/RPMS ";
+    }
+    $repos .= "--repository $repo ";
+
+    my $clean_option = "";
+    if ($clean) {
+       $clean_option = " --clean "; 
+    }
+    my $scratch = "$scratch_dir.$thread";
+
+    if (system ("sudo BUILD_ROOT=$scratch BUILD_DIR=\"$build_dir\" build --jobs 4 $clean_option --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename > /dev/null 2>&1  ") == 0) {
+
+        system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";
+        system ("cp $scratch/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS") == 0 or die "mv";
+        my_mkdir "$localrepo/$dist/$arch/logs/$name-$version-$release";
+        system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/$name-$version-$release/log") == 0 or die "mv";
+        system ("cp $scratch/.srcfiles.cache $order_dir/.repo.cache") == 0 or die "mv";
+        # Detach and terminate
+        {
+            lock($DETACHING);
+            threads->detach() if ! threads->is_detached();
+        }
+        return(0);
+    } else {
+        my_mkdir "$localrepo/$dist/$arch/logs/$name-$version-$release";
+        system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/$name-$version-$release/log") == 0 or die "mv";
+        push @errors, "$name-$dist-$arch$suffix";
+        print STDERR "Build failed, return code $?\nLeaving the logs in $scratch\n";
+        # Detach and terminate
+        {
+            lock($DETACHING);
+            threads->detach() if ! threads->is_detached();
+        }
+        return 1;
+    }
+
+}
 
 my @done = ();
 my %caught;
 my $packages_built = 0;
-createrepo ($arch, $dist);
+if ( ! -e "$localrepo/$dist/$arch/RPMS" ) {
+    createrepo ($arch, $dist);
+}
 while (1) {
     my @order = ();
-    #my $repo = "http://biruni.local:82/Tizen:/Base/standard/";
-    #my $repo_assist = "http://biruni.local:82/Tizen:/Base/standard/";
-    #my $repo = "http://download.tz.otcshare.org/live/Tizen:/Base/standard/";
-    my $repo = $Config{base_repo_url};
+    our $repo = $Config{base_repo_url};
     my $cmd = "$build_dir/createrepomddeps --cachedir=$order_dir $repo > $order_dir/.repo.cache ";
     debug($cmd);
     if ( ( system($cmd) == 0 ) &&
@@ -538,7 +648,7 @@ while (1) {
                     print "*** overwriting $name-$version-$release $arch $dist ***\n";
                 }
                 if (@binaries == 0 || $overwrite) {
-                    print "Checking dependencies for $name:\n";
+                    #print "Checking dependencies for $name:\n";
                     if ( system("$ENV{VIRTUAL_ENV}/usr/bin/check_unresolved --depfile $order_dir/.repo.cache --configdir $dist_configs --dist $dist --archpath i586:i686:noarch $fn") == 0 ) {
                         push(@order, $name);
                     }
@@ -546,8 +656,6 @@ while (1) {
                 } else {
                     print "skipping $name-$version-$release $arch $dist\n";
                 }
-            } else {
-                print "We handled this already: $name\n";
             }
         }
     } else {
@@ -558,71 +666,42 @@ while (1) {
         last;
     } else {
         push(@done, @order);
-        print "First pass:\n";
+        debug("Next pass:");
         foreach my $o (@order) {
-            print "$o\n";
+            debug($o);
         }
     }
     if ($dryrun) {
         exit 1
     }
-    
-    foreach my $name (@order) {
-        my $version = $to_build{$name}->{version};
-        my $release = $to_build{$name}->{release};
-        my $srpm_filename = $to_build{$name}->{filename};
 
-        # Rebuild the package.
-        print "*** building $name-$version-$release $arch $dist ***\n";
+    while (@order && ! $TERM) {
+        # Keep max threads running
+        for (my $needed = $MAX_THREADS - threads->list(); 
+            $needed && ! $TERM; $needed--) {
 
-        $ENV{'BUILD_DIR'} = $build_dir;
+            my $job = shift(@order);
+            last if (! $job);
 
-        my $repos = "";
-        if ( -d "$localrepo/$dist/$arch/RPMS" ) {
-            $repos .= "--rpms $localrepo/$dist/$arch/RPMS ";
-        }
-        $repos .= "--repository $repo ";
 
-        my $clean_option = "";
-        if ($clean) {
-           $clean_option = " --clean "; 
-        }
-
-        if (system ("sudo BUILD_ROOT=$scratch_dir BUILD_DIR=\"$build_dir\" build  --jobs 4 $clean_option --cachedir $cache_dir --dist $dist --configdir $dist_configs   $repos $srpm_filename") == 0) {
-
-            system ("cp $scratch_dir/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";
-            system ("cp $scratch_dir/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS") == 0 or die "mv";
-            my_mkdir "$localrepo/$dist/$arch/logs/$name-$version-$release";
-            system ("cp $scratch_dir/.build.log $localrepo/$dist/$arch/logs/$name-$version-$release/log") == 0 or die "mv";
-            system ("cp $scratch_dir/.srcfiles.cache $order_dir/.repo.cache") == 0 or die "mv";
-
-            #my $pattern = "$scratchdir/home/abuild/rpmbuild/RPMS/*/*.rpm";
-            #my @binaries = glob $pattern;
-            #foreach my $bin (@binaries) {
-            #    my $x = Build::Rpm::query($bin);
-                #print Dumper($x);
-            #}
-            $packages_built = 1;
-
-        }
-        else {
-            my_mkdir "$localrepo/$dist/$arch/logs/$name-$version-$release";
-            system ("cp $scratch_dir/.build.log $localrepo/$dist/$arch/logs/$name-$version-$release/log") == 0 or die "mv";
-            push @errors, "$name-$dist-$arch$suffix";
-            print STDERR "Build failed, return code $?\nLeaving the logs in $scratch_dir\n";
-            exit 1 unless $keepgoing;
+            my $worker = find_idle();
+            print "building $job (worker $worker)\n";
+            my $thr = threads->create('build_package',$job, $worker);
+            my $tid = $thr->tid();
+            set_busy($worker, $tid);
+            #print Dumper(%workers);
         }
     }
-    exit if ($caught{'INT'} == 1);
+
+    while ((threads->list() > 0)) {
+        # waiting for threads to finish
+        sleep(1);
+    }
+
 }
 
 if ($packages_built) {
     createrepo ($arch, $dist);
-}
-# When we get a signal, set a flag in %caught
-sub sigIntHandler {
-    print "INT caught!\n";
-    $caught{'INT'} = 1;
 }
 
 if (@errors) {

@@ -92,7 +92,8 @@ my_mkdir($order_dir);
 my $cache_dir = "$build_root/local/cache";
 my $configdir="$build_root/meta/dist-configs";
 my $groupfile="$build_root/meta/group.xml";
-my $build_dir = "$ENV{'VIRTUAL_ENV'}/usr/lib/build";
+my $virtualenv = "$ENV{'VIRTUAL_ENV'}";
+my $build_dir = "$virtualenv/usr/lib/build";
 my $config_filename = "$build_root/meta/local.conf";
 my $dist_configs = "$build_root/meta/dist-configs";
 my $man = 0;
@@ -267,7 +268,7 @@ sub parse_packs {
 sub expand_deps {
     my $rpmdeps = "$order_dir/.repo_assist.cache";
     if ( ! -e $rpmdeps ) {
-        my $repo_assist = "http://download.tz.otcshare.org/live/Tizen:/Main/standard/";
+        my $repo_assist = $Config{main_repo_url};
         if (system("$build_dir/createrepomddeps --cachedir=$order_dir $repo_assist > $rpmdeps ") != 0 ) {
             return 1;
         }
@@ -651,7 +652,7 @@ while (1) {
                 }
                 if (@binaries == 0 || $overwrite) {
                     debug("Checking dependencies for $name");
-                    if ( system("$ENV{VIRTUAL_ENV}/usr/bin/check_unresolved --depfile $order_dir/.repo.cache --configdir $dist_configs --dist $dist --archpath i586:i686:noarch $fn") == 0 ) {
+                    if ( system("$virtualenv/usr/bin/check_unresolved --depfile $order_dir/.repo.cache --configdir $dist_configs --dist $dist --archpath i586:i686:noarch $fn") == 0 ) {
                         push(@order, $name);
                     }
 

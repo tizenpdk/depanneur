@@ -24,15 +24,13 @@ BEGIN {
   unshift @INC,  "$wd";
   unshift @INC,  "$ENV{'VIRTUAL_ENV'}/usr/lib/build"
 }
-$|=1;
-
-
 
 use strict;
 use warnings;
 use threads;
 use threads::shared;
 use File::Find ();
+use Term::ANSIColor qw(:constants);
 
 # Global vars
 
@@ -169,7 +167,7 @@ my %Config = ();
 
 sub debug {
     my $msg = shift;
-    print "DEBUG: $msg\n" if $debug == 1;
+    print YELLOW, "DEBUG: $msg\n", RESET if $debug == 1;
 }
 
 
@@ -248,6 +246,7 @@ sub parse_packs {
             $path_to_spec =  "$package_path/$spec/$spec.spec";
         }
         my $pack = Build::Rpm::parse($config, $path_to_spec);
+        debug("path to spec: $path_to_spec");
         my $name = $pack->{name};
         my $version = $pack->{version};
         my $release = $pack->{release};
@@ -527,7 +526,7 @@ sub createrepo
         or die "createrepo failed: $?\n";
 }
 
-my @errors = ();
+my @errors :shared;
 
 my %workers = ();
 
@@ -566,6 +565,8 @@ sub set_idle {
     $workers{$worker} = { 'state' => 'idle' , 'tid' => undef};
 }
 
+my $packages_built :shared  = 0;
+
 sub build_package {
     my ($name, $thread) = @_;
     use vars qw($repo);
@@ -580,7 +581,7 @@ sub build_package {
     my $srpm_filename = $to_build{$name}->{filename};
 
     # Rebuild the package.
-    print "*** building $name-$version-$release $arch $dist ***\n";
+    print "*** building $name-$version-$release $arch $dist (worker: $thread) ***\n";
 
     $ENV{'BUILD_DIR'} = $build_dir;
 
@@ -608,12 +609,14 @@ sub build_package {
             lock($DETACHING);
             threads->detach() if ! threads->is_detached();
         }
+        print GREEN, "finished building $name\n", RESET;
+        $packages_built = 1;
         return(0);
     } else {
         my_mkdir "$localrepo/$dist/$arch/logs/$name-$version-$release";
         system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/$name-$version-$release/log") == 0 or die "mv";
         push @errors, "$name-$dist-$arch$suffix";
-        print STDERR "Build failed, return code $?\nLeaving the logs in $scratch\n";
+        print RED, "Build failed, Leaving the logs in $localrepo/$dist/$arch/logs/$name-$version-$release/log\n", RESET;
         # Detach and terminate
         {
             lock($DETACHING);
@@ -626,7 +629,6 @@ sub build_package {
 
 my @done = ();
 my %caught;
-my $packages_built = 0;
 if ( ! -e "$localrepo/$dist/$arch/RPMS" ) {
     createrepo ($arch, $dist);
 }
@@ -648,13 +650,13 @@ while (1) {
                     print "*** overwriting $name-$version-$release $arch $dist ***\n";
                 }
                 if (@binaries == 0 || $overwrite) {
-                    #print "Checking dependencies for $name:\n";
+                    debug("Checking dependencies for $name");
                     if ( system("$ENV{VIRTUAL_ENV}/usr/bin/check_unresolved --depfile $order_dir/.repo.cache --configdir $dist_configs --dist $dist --archpath i586:i686:noarch $fn") == 0 ) {
                         push(@order, $name);
                     }
 
                 } else {
-                    print "skipping $name-$version-$release $arch $dist\n";
+                    debug("skipping $name-$version-$release $arch $dist");
                 }
             }
         }
@@ -685,11 +687,9 @@ while (1) {
 
 
             my $worker = find_idle();
-            print "building $job (worker $worker)\n";
             my $thr = threads->create('build_package',$job, $worker);
             my $tid = $thr->tid();
             set_busy($worker, $tid);
-            #print Dumper(%workers);
         }
     }
 

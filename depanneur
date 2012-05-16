@@ -170,6 +170,10 @@ sub debug {
     my $msg = shift;
     print YELLOW, "DEBUG: $msg\n", RESET if $debug == 1;
 }
+sub info {
+    my $msg = shift;
+    print "$msg\n";
+}
 
 
 if ( $path eq "" ) {
@@ -197,6 +201,7 @@ if ($buildall) {
 sub git_wanted {
     my ($dev,$ino,$mode,$nlink,$uid,$gid);
 
+    info("Creating archives from git...");
     /^packaging\z/s &&
     (($dev,$ino,$mode,$nlink,$uid,$gid) = lstat($_)) &&
     -d _
@@ -214,7 +219,7 @@ sub fill_packs_from_obs()
 }
 
 
-sub fill_pacs_from_git()
+sub fill_packs_from_git()
 {
     my $name = shift;
     my $pattern = "$name/*.spec";
@@ -244,7 +249,11 @@ sub parse_packs {
         if ( -e $spec ) {
             $path_to_spec =  $spec;
         } else {
-            $path_to_spec =  "$package_path/$spec/$spec.spec";
+            if ( $style eq 'obs') {
+                $path_to_spec =  "$package_path/$spec/$spec.spec";
+            } else {
+                $path_to_spec =  "$package_path/$spec/$spec.spec";
+            }
         }
         my $pack = Build::Rpm::parse($config, $path_to_spec);
         debug("path to spec: $path_to_spec");

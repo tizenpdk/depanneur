@@ -194,7 +194,9 @@ if ($buildall) {
     }
 } else {
     if (@packs == 0) {
-        die("Please provide a list of packages to build.");
+        print "Please provide a list of packages to build.\n";
+        exit 1;
+
     }
 }
 

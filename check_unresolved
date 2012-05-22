@@ -8,7 +8,7 @@ use strict;
 
 use Build;
 
-my ($dist, $rpmdeps, $archs, $configdir, $useusedforbuild);
+my ($dist, $rpmdeps, $archs, $configdir, $useusedforbuild, $debug);
 
 while (@ARGV)  {
   if ($ARGV[0] eq '--dist') {
@@ -19,6 +19,11 @@ while (@ARGV)  {
   if ($ARGV[0] eq '--depfile') {
     shift @ARGV;
     $rpmdeps = shift @ARGV;
+    next;
+  }
+  if ($ARGV[0] eq '--debug') {
+    shift @ARGV;
+    $debug = 1;
     next;
   }
   if ($ARGV[0] eq '--archpath') {
@@ -267,9 +272,11 @@ Build::readdeps($cf, undef, \%repo);
 
 my @bdeps = Build::get_build($cf, $subpacks, @packdeps, @extradeps);
 
-if (!shift @bdeps) {
-    print STDERR "expansion error\n";
-    print STDERR "  $_\n" for @bdeps;
+if (!shift @bdeps ) {
+    if ($debug) {
+        print STDERR "expansion error\n";
+        print STDERR "  $_\n" for @bdeps;
+    }
   exit(1);
 }
 

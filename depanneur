@@ -34,8 +34,6 @@ use Term::ANSIColor qw(:constants);
 
 # Global vars
 
-# Maximum working threads
-my $MAX_THREADS = 4;
 
 # Flag to inform all threads that application is terminating
 my $TERM:shared=0;
@@ -90,15 +88,15 @@ my $order_dir = "$build_root/local/order";
 my_mkdir($order_dir);
 
 my $cache_dir = "$build_root/local/cache";
-my $configdir="$build_root/meta/dist-configs";
 my $groupfile="$build_root/meta/group.xml";
 my $virtualenv = "$ENV{'VIRTUAL_ENV'}";
 my $build_dir = "$virtualenv/usr/lib/build";
 my $config_filename = "$build_root/meta/local.conf";
-my $dist_configs = "$build_root/meta/dist-configs";
+my $dist_configs = "$build_root/meta/dist";
 my $man = 0;
 my $debug = 0;
 my $overwrite = 0;
+my $MAX_THREADS = 1;
 my $suffix = "";
 
 GetOptions (
@@ -118,6 +116,7 @@ GetOptions (
     "overwrite" => \$overwrite,
     "suffix=s" => \$suffix,
     "debug" => \$debug,
+    "threads" => \$MAX_THREADS,
     );
 
 
@@ -194,9 +193,7 @@ if ($buildall) {
     }
 } else {
     if (@packs == 0) {
-        print "Please provide a list of packages to build.\n";
-        exit 1;
-
+        die("Please provide a list of packages to build.");
     }
 }
 
@@ -227,7 +224,7 @@ sub fill_packs_from_git()
     my $pattern = "$name/*.spec";
     my @specs = glob $pattern;
     foreach my $spec (@specs) {
-        my $config = Build::read_config_dist($dist, $archs[1], $configdir);
+        my $config = Build::read_config_dist($dist, $archs[1], $dist_configs);
         my $pack = Build::Rpm::parse($config, $spec);
 
         my $pwd = getcwd;
@@ -246,7 +243,7 @@ sub parse_packs {
     my @packs = @_;
     my %packs = ();
     foreach my $spec (@packs) {
-        my $config = Build::read_config_dist($dist, "i586", $configdir);
+        my $config = Build::read_config_dist($dist, "i586", $dist_configs);
         my $path_to_spec = "";
         if ( -e $spec ) {
             $path_to_spec =  $spec;
@@ -340,7 +337,7 @@ sub expand_deps {
       $packs{$_} ||= "$_.$arch" for @{$packs_arch{$arch} || []};
     }
 
-    my $cf = Build::read_config_dist($dist, $archs[0], $configdir);
+    my $cf = Build::read_config_dist($dist, $archs[0], $dist_configs);
     $cf->{'warnings'} = 1;
 
     my $dofileprovides = %{$cf->{'fileprovides'}};
@@ -609,8 +606,9 @@ sub build_package {
     }
     my $scratch = "$scratch_dir.$thread";
 
-    if (system ("sudo BUILD_ROOT=$scratch BUILD_DIR=\"$build_dir\" build --jobs 4 $clean_option --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename > /dev/null 2>&1  ") == 0) {
-
+    my $buildcmd = "sudo BUILD_ROOT=$scratch BUILD_DIR=\"$build_dir\" build --jobs 4 $clean_option --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename > /dev/null 2>&1  ";
+    debug("$buildcmd");
+    if (system ($buildcmd) == 0 ) {
         system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";
         system ("cp $scratch/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS") == 0 or die "mv";
         my_mkdir "$localrepo/$dist/$arch/logs/$name-$version-$release";
@@ -626,9 +624,11 @@ sub build_package {
         return(0);
     } else {
         my_mkdir "$localrepo/$dist/$arch/logs/$name-$version-$release";
-        system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/$name-$version-$release/log") == 0 or die "mv";
+        if ( -f "$scratch/.build.log" ) {
+            system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/$name-$version-$release/log") == 0 or die "cp";
+            print RED, "Build failed, Leaving the logs in $localrepo/$dist/$arch/logs/$name-$version-$release/log\n", RESET;
+        }
         push @errors, "$name-$dist-$arch$suffix";
-        print RED, "Build failed, Leaving the logs in $localrepo/$dist/$arch/logs/$name-$version-$release/log\n", RESET;
         # Detach and terminate
         {
             lock($DETACHING);
@@ -663,7 +663,11 @@ while (1) {
                 }
                 if (@binaries == 0 || $overwrite) {
                     debug("Checking dependencies for $name");
-                    if ( system("$virtualenv/usr/bin/check_unresolved --depfile $order_dir/.repo.cache --configdir $dist_configs --dist $dist --archpath i586:i686:noarch $fn") == 0 ) {
+                    my $dd = "";
+                    if ( $debug ) {
+                        $dd = "--debug";
+                    }
+                    if ( system("$virtualenv/usr/bin/check_unresolved $dd --depfile $order_dir/.repo.cache --configdir $dist_configs --dist $dist --archpath i586:i686:noarch $fn") == 0 ) {
                         push(@order, $name);
                     }
 

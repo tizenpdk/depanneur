@@ -31,6 +31,8 @@ use threads;
 use threads::shared;
 use File::Find ();
 use Term::ANSIColor qw(:constants);
+use File::Path;
+use File::Basename;
 
 # Global vars
 
@@ -94,15 +96,20 @@ my $build_dir = "$virtualenv/usr/lib/build";
 my $config_filename = "$build_root/meta/local.conf";
 my $dist_configs = "$build_root/meta/dist";
 my $man = 0;
+my $cleanonce = 0;
 my $debug = 0;
 my $overwrite = 0;
 my $MAX_THREADS = 1;
 my $suffix = "";
+my @cleaned : shared = ();
+my $exclude_from_file = "";
 
 GetOptions (
     "arch=s" => \$arch,
     "clean" => \$clean,
+    "clean-once" => \$cleanonce,
     "exclude=s" => \@exclude,
+    "exclude-from-file=s" => \$exclude_from_file,
     "build-all" => \$buildall,
     "dist=s" => \$dist,
     "binary=s" => \$binarylist,
@@ -116,12 +123,18 @@ GetOptions (
     "overwrite" => \$overwrite,
     "suffix=s" => \$suffix,
     "debug" => \$debug,
-    "threads" => \$MAX_THREADS,
+    "threads=s" => \$MAX_THREADS,
     );
 
 
 my $scratch_dir = "$build_root/local/scratch.$arch";
 
+if ( $exclude_from_file ne "" && -e $exclude_from_file ) {
+    open FILE, "<", $exclude_from_file  or die $!;
+    @exclude = <FILE>;
+    chomp(@exclude);
+    close(FILE);
+}
 
 sub parse_config_file {
     my ($config_line, $Name, $Value);
@@ -200,7 +213,6 @@ if ($buildall) {
 sub git_wanted {
     my ($dev,$ino,$mode,$nlink,$uid,$gid);
 
-    info("Creating archives from git...");
     /^packaging\z/s &&
     (($dev,$ino,$mode,$nlink,$uid,$gid) = lstat($_)) &&
     -d _
@@ -226,14 +238,47 @@ sub fill_packs_from_git()
     foreach my $spec (@specs) {
         my $config = Build::read_config_dist($dist, $archs[1], $dist_configs);
         my $pack = Build::Rpm::parse($config, $spec);
-
+        if ( ( $pack->{'exclarch'} ) && ( ! grep $_ eq $arch, $pack->{'exclarch'} ) ) {
+            next;
+        }
         my $pwd = getcwd;
         my $base = dirname($name);
-        my $filename = "$name/$pack->{name}-$pack->{version}.tar.bz2";
-        debug ("Creating archive $filename");
-        system("cd $base; git archive --format=tar --prefix=$pack->{name}-$pack->{version}/ HEAD | bzip2 > $name/$pack->{name}-$pack->{version}.tar.bz2; cd $pwd") if ! -e $filename;
-        $filename = "$name/$pack->{name}-$pack->{version}.tar.gz";
-        system("cd $base; git archive --format=tar --prefix=$pack->{name}-$pack->{version}/ HEAD | gzip > $name/$pack->{name}-$pack->{version}.tar.gz; cd $pwd") if ! -e $filename;
+        debug ("Creating archive for $pack->{name}");
+        my $pkg_path = "$build_root/local/sources/$dist/$pack->{name}-$pack->{version}";
+        mkdir_p($pkg_path);
+        system("cp $base/packaging/* $pkg_path");
+        my $source = "";
+        if ( $pack->{source0} ne "" ) {
+            my $source_name = $pack->{source0};
+            my @sp = split("/", $source_name);
+            $source = $sp[-1];
+            debug("source for $name: $source");
+        } else {
+            debug("No source for $name");
+        }
+
+        #print Dumper($pack);
+        if ( $source ne "" ) {
+            #my $filename = "$pkg_path/$pack->{name}-$pack->{version}.tar.bz2";
+            my $filename = "$pkg_path/$source";
+            if ( ! -e $filename  ) {
+                #system("cd $base; git archive --format=tar --prefix=$pack->{name}-$pack->{version}/ HEAD | bzip2 > $pkg_path/$pack->{name}-$pack->{version}.tar.bz2; cd $pwd");
+                my $compress = "bzip2";
+                if ( $source =~ m/.gz$/ ) {
+                    $compress = "gzip";
+                } elsif ( $source =~ m/.xz$/ ) {
+                    $compress = "xz";
+                }
+                my $dir = $source;
+                $dir =~ s/\.tar.[gz|bz2|xz|.zip]//;
+                system("cd $base; git archive --format=tar --prefix=$dir/ HEAD | $compress > $pkg_path/$source; cd $pwd");
+            }
+            #$filename = "$pkg_path/$pack->{name}-$pack->{version}.tar.gz";
+            #if ( ! -e $filename ) {
+            #    system("cd $base; git archive --format=tar --prefix=$pack->{name}-$pack->{version}/ HEAD | gzip > $pkg_path/$pack->{name}-$pack->{version}.tar.gz; cd $pwd");
+            #    #system("cd $base; git archive --format=tar --prefix=$pack->{name}-$pack->{version}/ HEAD | gzip > $pkg_path/$pack->{source}; cd $pwd");
+            #}
+        }
         push(@packs, $spec);
     }
 }
@@ -255,6 +300,10 @@ sub parse_packs {
             }
         }
         my $pack = Build::Rpm::parse($config, $path_to_spec);
+        if ( ( $pack->{'exclarch'} ) && ( ! grep $_ eq $arch, $pack->{'exclarch'} ) ) {
+            next;
+        }
+        #print Dumper($pack);
         debug("path to spec: $path_to_spec");
         my $name = $pack->{name};
         my $version = $pack->{version};
@@ -500,6 +549,21 @@ if ($binarylist ne "") {
     %to_build = parse_packs(@packs);
 }
 
+sub mkdir_p($) {
+    my $path = shift;
+    my $err_msg;
+# attempt a 'mkdir -p' on the provided path and catch any errors returned
+    my $mkdir_out = File::Path::make_path( $path, { error => \my $err } );
+# catch and return the error if there was one
+    if (@$err) {
+        for my $diag (@$err) {
+            my ( $file, $message ) = %$diag;
+            $err_msg .= $message;
+        }
+        print STDERR "$err_msg";
+    }
+} 
+
 sub my_mkdir
 {
     local $_ = $_[0];
@@ -523,7 +587,6 @@ sub createrepo
 
     my_mkdir "$localrepo/$dist/$arch";
     my_mkdir "$localrepo/$dist/$arch/RPMS";
-    my_mkdir "$localrepo/$dist/$arch/logs";
 
     
     my $groups = "";
@@ -587,7 +650,14 @@ sub build_package {
 
     my $version = $to_build{$name}->{version};
     my $release = $to_build{$name}->{release};
-    my $srpm_filename = $to_build{$name}->{filename};
+    my $spec_name = basename($to_build{$name}->{filename});
+    my $pkg_path = "$build_root/local/sources/$dist/$name-$to_build{$name}->{version}";
+    my $srpm_filename = "";
+    if ( $style eq "git" ) {
+        $srpm_filename = "$pkg_path/$spec_name";
+    } else {
+        $srpm_filename = $to_build{$name}->{filename};
+    }
 
     # Rebuild the package.
     print "*** building $name-$version-$release $arch $dist (worker: $thread) ***\n";
@@ -601,8 +671,11 @@ sub build_package {
     $repos .= "--repository $repo ";
 
     my $clean_option = "";
-    if ($clean) {
+    if ( ($clean || $cleanonce ) && ( ! grep $_ == $thread, @cleaned) )  {
        $clean_option = " --clean "; 
+       if ($cleanonce) {
+            push(@cleaned, $thread);
+       }
     }
     my $scratch = "$scratch_dir.$thread";
 
@@ -611,8 +684,8 @@ sub build_package {
     if (system ($buildcmd) == 0 ) {
         system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";
         system ("cp $scratch/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS") == 0 or die "mv";
-        my_mkdir "$localrepo/$dist/$arch/logs/$name-$version-$release";
-        system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/$name-$version-$release/log") == 0 or die "mv";
+        my_mkdir "$localrepo/$dist/$arch/logs/success/$name-$version-$release";
+        system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/success/$name-$version-$release/log") == 0 or die "mv";
         system ("cp $scratch/.srcfiles.cache $order_dir/.repo.cache") == 0 or die "mv";
         # Detach and terminate
         {
@@ -623,10 +696,10 @@ sub build_package {
         $packages_built = 1;
         return(0);
     } else {
-        my_mkdir "$localrepo/$dist/$arch/logs/$name-$version-$release";
+        my_mkdir "$localrepo/$dist/$arch/logs/fail/$name-$version-$release";
         if ( -f "$scratch/.build.log" ) {
-            system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/$name-$version-$release/log") == 0 or die "cp";
-            print RED, "Build failed, Leaving the logs in $localrepo/$dist/$arch/logs/$name-$version-$release/log\n", RESET;
+            system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log") == 0 or die "cp";
+            print RED, "Build failed, Leaving the logs in $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log\n", RESET;
         }
         push @errors, "$name-$dist-$arch$suffix";
         # Detach and terminate
@@ -644,7 +717,12 @@ my %caught;
 if ( ! -e "$localrepo/$dist/$arch/RPMS" ) {
     createrepo ($arch, $dist);
 }
-while (1) {
+my_mkdir "$localrepo/$dist";
+my_mkdir "$localrepo/$dist/$arch";
+my_mkdir "$localrepo/$dist/$arch/logs";
+my_mkdir "$localrepo/$dist/$arch/logs/success";
+my_mkdir "$localrepo/$dist/$arch/logs/fail";
+while (! $TERM) {
     my @order = ();
     our $repo = $Config{base_repo_url};
     my $cmd = "$build_dir/createrepomddeps --cachedir=$order_dir $repo > $order_dir/.repo.cache ";

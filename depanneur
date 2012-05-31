@@ -87,7 +87,6 @@ my $build_root = $ENV{TIZEN_BUILD_ROOT};
 my $localrepo = "$build_root/local/repos";
 my $order_dir = "$build_root/local/order";
 
-my_mkdir($order_dir);
 
 my $cache_dir = "$build_root/local/cache";
 my $groupfile="$build_root/meta/group.xml";
@@ -102,7 +101,7 @@ my $overwrite = 0;
 my $MAX_THREADS = 1;
 my $suffix = "";
 my @cleaned : shared = ();
-my $exclude_from_file = "";
+my $exclude_from_file = "$build_root/meta/exclude";
 
 GetOptions (
     "arch=s" => \$arch,
@@ -130,11 +129,30 @@ GetOptions (
 my $scratch_dir = "$build_root/local/scratch.$arch";
 
 if ( $exclude_from_file ne "" && -e $exclude_from_file ) {
+    debug("using $exclude_from_file for package exclusion");
     open FILE, "<", $exclude_from_file  or die $!;
     @exclude = <FILE>;
     chomp(@exclude);
     close(FILE);
 }
+
+
+sub mkdir_p($) {
+    my $path = shift;
+    my $err_msg;
+# attempt a 'mkdir -p' on the provided path and catch any errors returned
+    my $mkdir_out = File::Path::make_path( $path, { error => \my $err } );
+# catch and return the error if there was one
+    if (@$err) {
+        for my $diag (@$err) {
+            my ( $file, $message ) = %$diag;
+            $err_msg .= $message;
+        }
+        print STDERR "$err_msg";
+    }
+} 
+
+mkdir_p($order_dir);
 
 sub parse_config_file {
     my ($config_line, $Name, $Value);
@@ -198,88 +216,112 @@ if ($binarylist ne "") {
     $buildall = 1;
 }
 
-if ($buildall) {
+if ($buildall || @packs == 0 ) {
     if ($style eq "git") {
         File::Find::find({wanted => \&git_wanted}, $package_path );
     } elsif ($style eq "obs") {
         File::Find::find({wanted => \&obs_wanted}, $package_path );
     }
 } else {
-    if (@packs == 0) {
-        die("Please provide a list of packages to build.");
+    if (@packs == 0 && $path eq "") {
+        print "Please provide a list of packages to build.";
+        exit 1;
     }
 }
 
 sub git_wanted {
     my ($dev,$ino,$mode,$nlink,$uid,$gid);
-
     /^packaging\z/s &&
     (($dev,$ino,$mode,$nlink,$uid,$gid) = lstat($_)) &&
     -d _
     && fill_packs_from_git($name);
 }
 
+
 sub obs_wanted {
     /^.*\.spec\z/s && fill_packs_from_obs($name);
 }
 
-sub fill_packs_from_obs()
-{
+sub fill_packs_from_obs() {
     my $name = shift;
     $name =~ m/\.osc/ || push(@packs, $name);
 }
 
-
-sub fill_packs_from_git()
-{
+sub fill_packs_from_git() {
     my $name = shift;
+    my $base = dirname($name);
+    if ( ! -e "$base/.git" ) {
+        debug("$base is not a git checkout");
+        return;
+    }
+    my $prj = basename($base);
+    if ( (grep $_ eq $prj, @exclude) ) {
+        return;
+    }
+    debug("working on $base");
+    my $pkg_path = "$build_root/local/sources/$dist";
+    my $cache_path = "$build_root/local/sources/$dist/cache";
+    mkdir_p($cache_path);
     my $pattern = "$name/*.spec";
     my @specs = glob $pattern;
-    foreach my $spec (@specs) {
-        my $config = Build::read_config_dist($dist, $archs[1], $dist_configs);
-        my $pack = Build::Rpm::parse($config, $spec);
-        if ( ( $pack->{'exclarch'} ) && ( ! grep $_ eq $arch, $pack->{'exclarch'} ) ) {
-            next;
-        }
-        my $pwd = getcwd;
-        my $base = dirname($name);
-        debug ("Creating archive for $pack->{name}");
-        my $pkg_path = "$build_root/local/sources/$dist/$pack->{name}-$pack->{version}";
-        mkdir_p($pkg_path);
-        system("cp $base/packaging/* $pkg_path");
-        my $source = "";
-        if ( $pack->{source0} ne "" ) {
-            my $source_name = $pack->{source0};
-            my @sp = split("/", $source_name);
-            $source = $sp[-1];
-            debug("source for $name: $source");
+    my $spec = "";
+    if (@specs > 1 ) {
+        if ( -e "$name/$prj.spec" ) {
+            $spec = "$name/$prj.spec";
         } else {
-            debug("No source for $name");
+            return;
         }
-
-        #print Dumper($pack);
-        if ( $source ne "" ) {
-            #my $filename = "$pkg_path/$pack->{name}-$pack->{version}.tar.bz2";
-            my $filename = "$pkg_path/$source";
-            if ( ! -e $filename  ) {
-                #system("cd $base; git archive --format=tar --prefix=$pack->{name}-$pack->{version}/ HEAD | bzip2 > $pkg_path/$pack->{name}-$pack->{version}.tar.bz2; cd $pwd");
-                my $compress = "bzip2";
-                if ( $source =~ m/.gz$/ ) {
-                    $compress = "gzip";
-                } elsif ( $source =~ m/.xz$/ ) {
-                    $compress = "xz";
-                }
-                my $dir = $source;
-                $dir =~ s/\.tar.[gz|bz2|xz|.zip]//;
-                system("cd $base; git archive --format=tar --prefix=$dir/ HEAD | $compress > $pkg_path/$source; cd $pwd");
+    } elsif (@specs) {
+        $spec = $specs[0];
+    } else {
+        return;
+    }
+    my $config = Build::read_config_dist($dist, "i586", $dist_configs);
+    my $pack = Build::Rpm::parse($config, $spec);
+    my $pkg_name = $pack->{name};
+    my $pkg_version = $pack->{version};
+    my $pkg_release = $pack->{release};
+    my $spec_file = basename($spec);
+    my $skip = 0;
+    if ( -e "$base/.git" ) {
+        open(GIT,"git --git-dir $base/.git rev-parse  HEAD |") || die "Failed: $!\n";
+        while (my $current_rev = <GIT>) {
+            chomp($current_rev);
+            #debug("current rev for $pkg_name: $current_rev");
+            #debug("$cache_path/$pkg_name-$pkg_version-$pkg_release");
+            if ( -e "$cache_path/$pkg_name-$pkg_version-$pkg_release" ) {
+                open (REV, "< $cache_path/$pkg_name-$pkg_version-$pkg_release");
+            } else {
+                open (REV, "> $cache_path/$pkg_name-$pkg_version-$pkg_release");
             }
-            #$filename = "$pkg_path/$pack->{name}-$pack->{version}.tar.gz";
-            #if ( ! -e $filename ) {
-            #    system("cd $base; git archive --format=tar --prefix=$pack->{name}-$pack->{version}/ HEAD | gzip > $pkg_path/$pack->{name}-$pack->{version}.tar.gz; cd $pwd");
-            #    #system("cd $base; git archive --format=tar --prefix=$pack->{name}-$pack->{version}/ HEAD | gzip > $pkg_path/$pack->{source}; cd $pwd");
-            #}
+            my @lines = <REV>;
+            foreach my $old_rev(@lines) {
+                #debug("old rev: $old_rev");
+                chomp($old_rev);
+                if ( $current_rev eq $old_rev ) {
+                    $skip = 1;
+                    #debug("skip");
+                } else {
+                    #debug("$current_rev is not equal to $old_rev");
+                }
+            }
+            close (REV); 
+            open (REV, "> $cache_path/$pkg_name-$pkg_version-$pkg_release");
+            print REV $current_rev . "\n";
+            close (REV); 
         }
-        push(@packs, $spec);
+        close(GIT);
+    } else {
+        debug("not a git repo: $base/.git!!");
+    }
+    if ($skip == 1) {
+        push(@packs, "$pkg_path/$pkg_name-$pkg_version-$pkg_release/$spec_file");
+    } else {
+        if ( system("gbs export  $base -o $pkg_path") == 0 ) {
+            push(@packs, "$pkg_path/$pkg_name-$pkg_version-$pkg_release/$spec_file");
+        } else {
+            debug("$name was not exported correctly");
+        }
     }
 }
 
@@ -326,6 +368,7 @@ sub expand_deps {
     my $rpmdeps = "$order_dir/.repo_assist.cache";
     if ( ! -e $rpmdeps ) {
         my $repo_assist = $Config{main_repo_url};
+        debug("retrieving dependency data from server....");
         if (system("$build_dir/createrepomddeps --cachedir=$order_dir $repo_assist > $rpmdeps ") != 0 ) {
             return 1;
         }
@@ -474,7 +517,9 @@ if ($binarylist ne "" && -e $binarylist )
     foreach my $p (@tobuild) {
         my @deps = @{$packs{$p}->{deps}};    
         foreach my $dep (@deps) {
+            debug($dep);
             foreach my $prr (keys %repo_assist) {
+                debug("=====>" . $prr);
                 if (grep $_ eq $dep, @{$repo_assist{$prr}->{provides}}) {
                     my $mainp = source_of($prr, %packs);
                     if (defined($mainp)) {
@@ -485,6 +530,7 @@ if ($binarylist ne "" && -e $binarylist )
             }
         }
     }
+    debug("done");
     print "Improved set:\n";
     foreach my $p (@tobuild) {
         print "$p, ";
@@ -500,8 +546,13 @@ if ($binarylist ne "" && -e $binarylist )
         push(@final, $fn);
     }
 
-    print "Still " . ($#tofind + 1 ) . " to find:\n";
-    print "Check if binaries are provided by a repo\n";
+    debug("Still " . ($#tofind + 1 ) . " to find:");
+    debug("Check if binaries are provided by a repo");
+    if ( ! -e "$order_dir/.repo.cache" ) {
+        our $repo = $Config{base_repo_url};
+        my $cmd = "$build_dir/createrepomddeps --cachedir=$order_dir $repo > $order_dir/.repo.cache ";
+        system($cmd);
+    }
     my $rpmdeps = "$order_dir/.repo.cache";
     open(F, '<', $rpmdeps) || die("$rpmdeps: $!\n");
     my @bindeps = <F>;
@@ -509,22 +560,22 @@ if ($binarylist ne "" && -e $binarylist )
     chomp(@bindeps);
     my @tofind_2 = ();
     foreach my $missing (@tofind) {
-        print "Checking for $missing: ";
+        debug("Checking for $missing: ");
         if ( grep /^I:$missing.(i586|i686|noarch)-.*/, @bindeps ) {
-            print "provided as binary, skipping...\n";
+            debug("provided as binary, skipping...");
         } else {
-            print "can't be found.\n";
+            debug("can't be found.");
             push(@tofind_2, $missing);
         }
     }
     if ($#tofind_2 > 0 ) {
-        print "Still " . ($#tofind_2 + 1 ) . " to find:\n";
+        debug("Still " . ($#tofind_2 + 1 ) . " to find:");
     }
     foreach my $m (@tofind_2) {
-        print $m . "\n";
+        debug($m);
     }
 } elsif ( $binarylist ne "") {
-    print "Cant find binary list for image\n";
+    print STDERR "Cant find binary list for image\n";
     exit 1;
 }
 
@@ -549,44 +600,18 @@ if ($binarylist ne "") {
     %to_build = parse_packs(@packs);
 }
 
-sub mkdir_p($) {
-    my $path = shift;
-    my $err_msg;
-# attempt a 'mkdir -p' on the provided path and catch any errors returned
-    my $mkdir_out = File::Path::make_path( $path, { error => \my $err } );
-# catch and return the error if there was one
-    if (@$err) {
-        for my $diag (@$err) {
-            my ( $file, $message ) = %$diag;
-            $err_msg .= $message;
-        }
-        print STDERR "$err_msg";
-    }
-} 
 
-sub my_mkdir
-{
-    local $_ = $_[0];
-
-    if (! -d $_) {
-        mkdir ($_, 0755) or die "mkdir $_: $!"
-    }
-}
 
 sub createrepo
 {
     my $arch = shift;
     my $dist = shift;
 
-    my_mkdir "$localrepo";
-    my_mkdir "$localrepo/$dist";
-    my_mkdir "$localrepo/$dist/src";
-    my_mkdir "$localrepo/$dist/src/SRPMS";
+    mkdir_p "$localrepo/$dist/src/SRPMS";
     system ("cd $localrepo/$dist/src && rm -rf repodata && createrepo --changelog-limit=0 -q . > /dev/null 2>&1 ") == 0
         or die "createrepo failed: $?\n";
 
-    my_mkdir "$localrepo/$dist/$arch";
-    my_mkdir "$localrepo/$dist/$arch/RPMS";
+    mkdir_p "$localrepo/$dist/$arch/RPMS";
 
     
     my $groups = "";
@@ -651,7 +676,7 @@ sub build_package {
     my $version = $to_build{$name}->{version};
     my $release = $to_build{$name}->{release};
     my $spec_name = basename($to_build{$name}->{filename});
-    my $pkg_path = "$build_root/local/sources/$dist/$name-$to_build{$name}->{version}";
+    my $pkg_path = "$build_root/local/sources/$dist/$name-$version-$release";
     my $srpm_filename = "";
     if ( $style eq "git" ) {
         $srpm_filename = "$pkg_path/$spec_name";
@@ -684,7 +709,7 @@ sub build_package {
     if (system ($buildcmd) == 0 ) {
         system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";
         system ("cp $scratch/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS") == 0 or die "mv";
-        my_mkdir "$localrepo/$dist/$arch/logs/success/$name-$version-$release";
+        mkdir_p "$localrepo/$dist/$arch/logs/success/$name-$version-$release";
         system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/success/$name-$version-$release/log") == 0 or die "mv";
         system ("cp $scratch/.srcfiles.cache $order_dir/.repo.cache") == 0 or die "mv";
         # Detach and terminate
@@ -696,7 +721,7 @@ sub build_package {
         $packages_built = 1;
         return(0);
     } else {
-        my_mkdir "$localrepo/$dist/$arch/logs/fail/$name-$version-$release";
+        mkdir_p "$localrepo/$dist/$arch/logs/fail/$name-$version-$release";
         if ( -f "$scratch/.build.log" ) {
             system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log") == 0 or die "cp";
             print RED, "Build failed, Leaving the logs in $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log\n", RESET;
@@ -717,11 +742,9 @@ my %caught;
 if ( ! -e "$localrepo/$dist/$arch/RPMS" ) {
     createrepo ($arch, $dist);
 }
-my_mkdir "$localrepo/$dist";
-my_mkdir "$localrepo/$dist/$arch";
-my_mkdir "$localrepo/$dist/$arch/logs";
-my_mkdir "$localrepo/$dist/$arch/logs/success";
-my_mkdir "$localrepo/$dist/$arch/logs/fail";
+mkdir_p "$localrepo/$dist/$arch/logs/success";
+mkdir_p "$localrepo/$dist/$arch/logs/fail";
+
 while (! $TERM) {
     my @order = ();
     our $repo = $Config{base_repo_url};

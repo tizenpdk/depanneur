@@ -1,22 +1,5 @@
 #!/usr/bin/perl 
 #
-# SMOCK - Simpler Mock
-# by Dan Berrange and Richard W.M. Jones.
-# Copyright (C) 2008 Red Hat Inc.
-#
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 BEGIN {
   my ($wd) = $0 =~ m-(.*)/- ;
   $wd ||= '.';
@@ -26,6 +9,7 @@ BEGIN {
 }
 
 use strict;
+use YAML qw(LoadFile);
 use warnings;
 use threads;
 use threads::shared;
@@ -33,6 +17,7 @@ use File::Find ();
 use Term::ANSIColor qw(:constants);
 use File::Path;
 use File::Basename;
+use URI;
 
 # Global vars
 
@@ -92,7 +77,7 @@ my $cache_dir = "$build_root/local/cache";
 my $groupfile="$build_root/meta/group.xml";
 my $virtualenv = "$ENV{'VIRTUAL_ENV'}";
 my $build_dir = "$virtualenv/usr/lib/build";
-my $config_filename = "$build_root/meta/local.conf";
+my $config_filename = "$build_root/meta/local.yaml";
 my $dist_configs = "$build_root/meta/dist";
 my $man = 0;
 my $cleanonce = 0;
@@ -154,46 +139,24 @@ sub mkdir_p($) {
 
 mkdir_p($order_dir);
 
-sub parse_config_file {
-    my ($config_line, $Name, $Value);
-
-    my ($File, $Config) = @_;
-
-    if (!open (CONFIG, "$File")) {
-        print "ERROR: Config file not found : $File\n";
-        exit(0);
-    }
-
-    while (<CONFIG>) {
-        $config_line=$_;
-        chop ($config_line);          # Get rid of the trailling \n
-        $config_line =~ s/^\s*//;     # Remove spaces at the start of the line
-        $config_line =~ s/\s*$//;     # Remove spaces at the end of the line
-        if ( ($config_line !~ /^#/) && ($config_line ne "") ){    # Ignore lines starting with # and blank lines
-            ($Name, $Value) = split (/=/, $config_line);          # Split each line into name value pairs
-            $Name =~ s/^\s*//;
-            $Name =~ s/\s*$//;
-            $Value =~ s/\s*$//;
-            $Value =~ s/^\s*//;
-            $$Config{$Name} = $Value;                             # Create a hash of the name value pairs
-        }
-    }
-    close(CONFIG);
-}
-
-
 
 my @packs = @ARGV;
 my $package_path = "";
 # FIXME
 my @archs = ("i586", "i686", "noarch");
-my %Config = ();
-&parse_config_file ($config_filename, \%Config);
-#foreach my $Config_key (keys %Config) {
-#    print "$Config_key\n";
-#    print "$Config_key = $Config{$Config_key}\n";
-#}
-#exit(1);
+
+my $Config = LoadFile($config_filename);
+my @package_repos = ();
+foreach my $r (@{$Config->{Repositories}}) {
+    my $uri = URI->new($r->{Url});
+    if ( $r->{Password} && $r->{Username} ) {
+        $uri->userinfo($r->{Username} . ":" . $r->{Password});
+    }
+    if ($uri->scheme ne "file") {
+        push(@package_repos, $uri);
+    }
+}
+
 
 
 sub debug {
@@ -202,7 +165,7 @@ sub debug {
 }
 sub info {
     my $msg = shift;
-    print "$msg\n";
+    print GREEN, "$msg\n", RESET;
 }
 
 
@@ -287,28 +250,23 @@ sub fill_packs_from_git() {
         open(GIT,"git --git-dir $base/.git rev-parse  HEAD |") || die "Failed: $!\n";
         while (my $current_rev = <GIT>) {
             chomp($current_rev);
-            #debug("current rev for $pkg_name: $current_rev");
-            #debug("$cache_path/$pkg_name-$pkg_version-$pkg_release");
+            my @lines = ();
             if ( -e "$cache_path/$pkg_name-$pkg_version-$pkg_release" ) {
                 open (REV, "< $cache_path/$pkg_name-$pkg_version-$pkg_release");
+                @lines = <REV>;
             } else {
                 open (REV, "> $cache_path/$pkg_name-$pkg_version-$pkg_release");
             }
-            my @lines = <REV>;
             foreach my $old_rev(@lines) {
-                #debug("old rev: $old_rev");
                 chomp($old_rev);
                 if ( $current_rev eq $old_rev ) {
                     $skip = 1;
-                    #debug("skip");
-                } else {
-                    #debug("$current_rev is not equal to $old_rev");
                 }
             }
             close (REV); 
-            open (REV, "> $cache_path/$pkg_name-$pkg_version-$pkg_release");
-            print REV $current_rev . "\n";
-            close (REV); 
+            open (REV1, "+> $cache_path/$pkg_name-$pkg_version-$pkg_release");
+            print REV1 $current_rev . "\n";
+            close (REV1); 
         }
         close(GIT);
     } else {
@@ -345,7 +303,6 @@ sub parse_packs {
         if ( ( $pack->{'exclarch'} ) && ( ! grep $_ eq $arch, $pack->{'exclarch'} ) ) {
             next;
         }
-        #print Dumper($pack);
         debug("path to spec: $path_to_spec");
         my $name = $pack->{name};
         my $version = $pack->{version};
@@ -365,13 +322,13 @@ sub parse_packs {
 }
 
 sub expand_deps {
-    my $rpmdeps = "$order_dir/.repo_assist.cache";
+    my $rpmdeps = "$order_dir/.repo.cache";
     if ( ! -e $rpmdeps ) {
-        my $repo_assist = $Config{main_repo_url};
-        debug("retrieving dependency data from server....");
-        if (system("$build_dir/createrepomddeps --cachedir=$order_dir $repo_assist > $rpmdeps ") != 0 ) {
-            return 1;
-        }
+        #my $repo_assist = $Config{main_repo_url};
+        #debug("retrieving dependency data from server....");
+        #if (system("$build_dir/createrepomddeps --cachedir=$order_dir $repo_assist > $rpmdeps ") != 0 ) {
+        #    return 1;
+        #}
     }
     my (%fn, %prov, %req);
 
@@ -549,9 +506,11 @@ if ($binarylist ne "" && -e $binarylist )
     debug("Still " . ($#tofind + 1 ) . " to find:");
     debug("Check if binaries are provided by a repo");
     if ( ! -e "$order_dir/.repo.cache" ) {
-        our $repo = $Config{base_repo_url};
-        my $cmd = "$build_dir/createrepomddeps --cachedir=$order_dir $repo > $order_dir/.repo.cache ";
-        system($cmd);
+        system("> $order_dir/.repo.cache");
+        foreach my $repo (@package_repos) {
+            my $cmd = "$build_dir/createrepomddeps --cachedir=$order_dir $repo >> $order_dir/.repo.cache ";
+            system($cmd);
+        }
     }
     my $rpmdeps = "$order_dir/.repo.cache";
     open(F, '<', $rpmdeps) || die("$rpmdeps: $!\n");
@@ -666,7 +625,7 @@ my $packages_built :shared  = 0;
 
 sub build_package {
     my ($name, $thread) = @_;
-    use vars qw($repo);
+    use vars qw(@package_repos);
     #{
     #    lock($DETACHING);
     #    threads->detach() if ! threads->is_detached();
@@ -693,7 +652,9 @@ sub build_package {
     if ( -d "$localrepo/$dist/$arch/RPMS" ) {
         $repos .= "--rpms $localrepo/$dist/$arch/RPMS ";
     }
-    $repos .= "--repository $repo ";
+    foreach my $r (@package_repos) {
+        $repos .= "--repository $r ";
+    }
 
     my $clean_option = "";
     if ( ($clean || $cleanonce ) && ( ! grep $_ == $thread, @cleaned) )  {
@@ -747,39 +708,49 @@ mkdir_p "$localrepo/$dist/$arch/logs/fail";
 
 while (! $TERM) {
     my @order = ();
-    our $repo = $Config{base_repo_url};
-    my $cmd = "$build_dir/createrepomddeps --cachedir=$order_dir $repo > $order_dir/.repo.cache ";
-    debug($cmd);
-    if ( ( system($cmd) == 0 ) &&
-        system("$build_dir/createrpmdeps $localrepo/$dist/$arch/RPMS >> $order_dir/.repo.cache ") == 0 ) {
-        foreach my $name (keys %to_build) {
-            if( ! (grep $_ eq $name, @done) && ! (grep $_ eq $name, @exclude)) {
-                my $fn = $to_build{$name}->{filename};
-                my $version = $to_build{$name}->{version};
-                my $release = $to_build{$name}->{release};
-                my $pattern = "$localrepo/$dist/src/SRPMS/$name-$version-$release.*.rpm";
-                my @binaries = glob $pattern;
-                if (@binaries != 0 && $overwrite) {
-                    print "*** overwriting $name-$version-$release $arch $dist ***\n";
-                }
-                if (@binaries == 0 || $overwrite) {
-                    debug("Checking dependencies for $name");
-                    my $dd = "";
-                    if ( $debug ) {
-                        $dd = "--debug";
-                    }
-                    if ( system("$virtualenv/usr/bin/check_unresolved $dd --depfile $order_dir/.repo.cache --configdir $dist_configs --dist $dist --archpath i586:i686:noarch $fn") == 0 ) {
-                        push(@order, $name);
-                    }
-
-                } else {
-                    debug("skipping $name-$version-$release $arch $dist");
-                }
-            }
+    my $repos_setup = 1;
+    system("> $order_dir/.repo.cache");
+    if ( system("$build_dir/createrpmdeps $localrepo/$dist/$arch/RPMS >> $order_dir/.repo.cache ") != 0 ) {
+        $repos_setup = 0;
+    }
+    system("echo D: >> $order_dir/.repo.cache");
+    foreach my $repo (@package_repos) {
+        my $cmd = "$build_dir/createrepomddeps --cachedir=$order_dir $repo >> $order_dir/.repo.cache ";
+        debug($cmd);
+        if ( system($cmd) == 0 ) {
+            system("echo D: >> $order_dir/.repo.cache");
+        } else {
+            $repos_setup = 0;
         }
-    } else {
+    }
+    if ($repos_setup == 0 ) {
         print "repo cache creation failed...\n";
         exit(1);
+    }
+    foreach my $name (keys %to_build) {
+        if( ! (grep $_ eq $name, @done) && ! (grep $_ eq $name, @exclude)) {
+            my $fn = $to_build{$name}->{filename};
+            my $version = $to_build{$name}->{version};
+            my $release = $to_build{$name}->{release};
+            my $pattern = "$localrepo/$dist/src/SRPMS/$name-$version-$release.*.rpm";
+            my @binaries = glob $pattern;
+            if (@binaries != 0 && $overwrite) {
+                print "*** overwriting $name-$version-$release $arch $dist ***\n";
+            }
+            if (@binaries == 0 || $overwrite) {
+                debug("Checking dependencies for $name");
+                my $dd = "";
+                if ( $debug ) {
+                    $dd = "--debug";
+                }
+                if ( system("$virtualenv/usr/bin/check_unresolved $dd --depfile $order_dir/.repo.cache --configdir $dist_configs --dist $dist --archpath i586:i686:noarch $fn") == 0 ) {
+                    push(@order, $name);
+                }
+
+            } else {
+                info("skipping $name-$version-$release $arch $dist");
+            }
+        }
     }
     if (@order == 0) {
         last;

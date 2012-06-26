@@ -174,6 +174,7 @@ if ( $path eq "" ) {
 } else {
     $package_path = $path;
 }
+print "Start building packages from: " . $package_path . "($style)\n";
 
 if ($binarylist ne "") {
     $buildall = 1;
@@ -425,6 +426,7 @@ sub expand_deps {
 
 
 
+print "Parsing package data...\n";
 my %packs = parse_packs(@packs);
 
 
@@ -665,7 +667,7 @@ sub build_package {
     }
     my $scratch = "$scratch_dir.$thread";
 
-    my $buildcmd = "sudo BUILD_ROOT=$scratch BUILD_DIR=\"$build_dir\" build --jobs 4 $clean_option --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename > /dev/null 2>&1  ";
+    my $buildcmd = "sudo BUILD_ROOT=$scratch BUILD_DIR=\"$build_dir\" $virtualenv/usr/bin/build --jobs 4 $clean_option --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename > /dev/null 2>&1  ";
     debug("$buildcmd");
     if (system ($buildcmd) == 0 ) {
         system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";
@@ -756,9 +758,9 @@ while (! $TERM) {
         last;
     } else {
         push(@done, @order);
-        debug("Next pass:");
+        print "Next pass:\n";
         foreach my $o (@order) {
-            debug($o);
+            print $o . "\n";
         }
     }
     if ($dryrun) {

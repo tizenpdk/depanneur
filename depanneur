@@ -701,6 +701,7 @@ sub build_package {
 }
 
 my @done = ();
+my @skipped = ();
 my %caught;
 if ( ! -e "$localrepo/$dist/$arch/RPMS" ) {
     createrepo ($arch, $dist);
@@ -746,11 +747,30 @@ while (! $TERM) {
                     $dd = "--debug";
                 }
                 if ( system("$virtualenv/usr/bin/check_unresolved $dd --depfile $order_dir/.repo.cache --configdir $dist_configs --dist $dist --archpath i586:i686:noarch $fn") == 0 ) {
-                    push(@order, $name);
+                    my $stop =  0;
+                    my @deps = @{$to_build{$name}->{deps}};
+                    foreach my $dep (@deps) {
+                        foreach my $n2 (keys %to_build) {
+                            my @subs = @{$to_build{$n2}->{subpacks}};
+                            for my $sub (@subs) {
+                                my $so = source_of($sub, %to_build);
+                                $dep =~ m/([^\s]+).*/;
+                                if ( $sub eq $1 && ! grep($_ eq $so, @skipped) ) {
+                                    $stop = 1;
+                                }
+                            }
+                        }
+
+                    }
+
+                    if ($stop == 0 ) {
+                        push(@order, $name);
+                    }
                 }
 
             } else {
                 info("skipping $name-$version-$release $arch $dist");
+                push(@skipped, $name);
             }
         }
     }

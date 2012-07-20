@@ -752,11 +752,13 @@ while (! $TERM) {
                     foreach my $dep (@deps) {
                         foreach my $n2 (keys %to_build) {
                             my @subs = @{$to_build{$n2}->{subpacks}};
-                            for my $sub (@subs) {
-                                my $so = source_of($sub, %to_build);
-                                $dep =~ m/([^\s]+).*/;
-                                if ( $sub eq $1 && ! grep($_ eq $so, @skipped) ) {
-                                    $stop = 1;
+                            if (! grep($_ eq $n2, @done)) {
+                                foreach my $sub (@subs) {
+                                    my $so = source_of($sub, %to_build);
+                                    $dep =~ m/([^\s]+).*/;
+                                    if ( $sub eq $1 && ! grep($_ eq $so, @skipped) ) {
+                                        $stop = 1;
+                                    }
                                 }
                             }
                         }

@@ -169,13 +169,16 @@ sub info {
     print GREEN, "$msg\n", RESET;
 }
 
-
+if ( -d "packaging" && -d ".git" ) {
+    $path = cwd();
+}
 if ( $path eq "" ) {
     $package_path = "$build_root/packages";
 } else {
     $package_path = $path;
 }
-print "Start building packages from: " . $package_path . "($style)\n";
+
+print "Start building packages from: " . $package_path . " ($style)\n";
 
 if ($binarylist ne "") {
     $buildall = 1;
@@ -705,7 +708,7 @@ my @done = ();
 my @skipped = ();
 my %caught;
 if ( ! -e "$localrepo/$dist/$arch/RPMS" ) {
-    print "Creating repo..."
+    print "Creating repo...";
     createrepo ($arch, $dist);
 }
 mkdir_p "$localrepo/$dist/$arch/logs/success";

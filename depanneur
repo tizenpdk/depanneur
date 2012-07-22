@@ -59,7 +59,7 @@ my @threads;
 my @exclude = ();
 my $arch = "i586";
 my $path = "";
-my $style = "obs";
+my $style = "git";
 my $clean = 0;
 my $binarylist = "";
 my $buildall = 0;
@@ -161,6 +161,7 @@ foreach my $r (@{$Config->{Repositories}}) {
 
 sub debug {
     my $msg = shift;
+    $msg =~ s#://[^@]*@#://#g;
     print YELLOW, "DEBUG: $msg\n", RESET if $debug == 1;
 }
 sub info {
@@ -704,6 +705,7 @@ my @done = ();
 my @skipped = ();
 my %caught;
 if ( ! -e "$localrepo/$dist/$arch/RPMS" ) {
+    print "Creating repo..."
     createrepo ($arch, $dist);
 }
 mkdir_p "$localrepo/$dist/$arch/logs/success";

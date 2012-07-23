@@ -84,6 +84,7 @@ my $dist_configs = "$build_root/meta/dist";
 my $man = 0;
 my $cleanonce = 0;
 my $debug = 0;
+my $incremental = 0;
 my $overwrite = 0;
 my $MAX_THREADS = 1;
 my $suffix = "";
@@ -109,6 +110,7 @@ GetOptions (
     "overwrite" => \$overwrite,
     "suffix=s" => \$suffix,
     "debug" => \$debug,
+    "incremental" => \$incremental,
     "threads=s" => \$MAX_THREADS,
     );
 

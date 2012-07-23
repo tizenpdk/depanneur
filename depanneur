@@ -43,6 +43,8 @@ use vars qw/*name *dir *prune/;
 *dir    = *File::Find::dir;
 *prune  = *File::Find::prune;
 
+my ($zname, $zpass, $zuid, $zgid, $zquota, $zcomment, $zgcos, $zdir, $zshell, $zexpire) = getpwnam(getlogin());
+
 sub wanted;
 
 
@@ -689,7 +691,7 @@ sub build_package {
     if ($MAX_THREADS > 1 ) {
         $redirect = "> /dev/null 2>&1";
     }
-    my $buildcmd = "sudo BUILD_ROOT=$scratch BUILD_DIR=\"$build_dir\" $virtualenv/usr/bin/build --jobs 4 $clean_option --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename $redirect  ";
+    my $buildcmd = "sudo BUILD_ROOT=$scratch BUILD_DIR=\"$build_dir\" $virtualenv/usr/bin/build --uid $zuid:$zgid --jobs 4 $clean_option --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename $redirect  ";
     debug("$buildcmd");
     if (system ($buildcmd) == 0 ) {
         system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";

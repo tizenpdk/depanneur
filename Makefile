@@ -14,6 +14,7 @@ install:
 	    $(DESTDIR)$(bindir)
 	install -m755 \
 	    depanneur  \
+		do_expanddeps \
         check_unresolved \
 	    $(DESTDIR)$(bindir)
 

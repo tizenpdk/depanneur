@@ -146,6 +146,10 @@ my @packs = @ARGV;
 my $package_path = "";
 # FIXME
 my @archs = ("i586", "i686", "noarch");
+my $archpath;
+foreach my $ap (@archs) {
+    $archpath .= $ap.":"; 
+}
 
 my $Config = LoadFile($config_filename);
 my @package_repos = ();
@@ -762,6 +766,18 @@ while (! $TERM) {
             my $release = $to_build{$name}->{release};
             my $pattern = "$localrepo/$dist/src/SRPMS/$name-$version-$release.*.rpm";
             my @binaries = glob $pattern;
+            if (@binaries != 0 && ! $overwrite) {
+                push(@skipped, $name);
+            }
+        }
+    }
+    foreach my $name (keys %to_build) {
+        if( ! (grep $_ eq $name, @done) && ! (grep $_ eq $name, @exclude) && ! (grep $_ eq $name, @skipped)) {
+            my $fn = $to_build{$name}->{filename};
+            my $version = $to_build{$name}->{version};
+            my $release = $to_build{$name}->{release};
+            my $pattern = "$localrepo/$dist/src/SRPMS/$name-$version-$release.*.rpm";
+            my @binaries = glob $pattern;
             if (@binaries != 0 && $overwrite) {
                 print "*** overwriting $name-$version-$release $arch $dist ***\n";
             }
@@ -771,22 +787,35 @@ while (! $TERM) {
                 if ( $debug ) {
                     $dd = "--debug";
                 }
-                if ( system("$virtualenv/usr/bin/check_unresolved $dd --depfile $order_dir/.repo.cache --configdir $dist_configs --dist $dist --archpath i586:i686:noarch $fn") == 0 ) {
+                if ( system("$virtualenv/usr/bin/check_unresolved $dd --depfile $order_dir/.repo.cache --configdir $dist_configs --dist $dist --archpath $archpath $fn") == 0 ) {
                     my $stop =  0;
                     my @deps = @{$to_build{$name}->{deps}};
+                    print "now looking into $name\n";
                     foreach my $dep (@deps) {
-                        foreach my $n2 (keys %to_build) {
-                            my @subs = @{$to_build{$n2}->{subpacks}};
-                            if (! grep($_ eq $n2, @done)) {
-                                foreach my $sub (@subs) {
-                                    my $so = source_of($sub, %to_build);
-                                    $dep =~ m/([^\s]+).*/;
-                                    if ( $sub eq $1 && ! grep($_ eq $so, @skipped) ) {
-                                        $stop = 1;
-                                    }
-                                }
+                        open(EXPAND,"$virtualenv/usr/bin/do_expanddeps --dist $dist --depfile $order_dir/.repo.cache --archpath $archpath --configdir $dist_configs \"$dep\" |") || die "Failed: $!\n";
+                        while ( <EXPAND> ) {
+                            chomp;
+                            my $ddep = $_;
+                            my $so = source_of($ddep, %to_build);
+                            if ( defined($so) && ($so ne $name) && (! grep($_ eq $so, @skipped)) && (! grep($_ eq $so, @done)) ) {
+                                print "Not adding $name for now, it needs $dep -> $ddep ($so)...\n";
+                                $stop = 1;
                             }
-                        }
+                        } 
+                        close(EXPAND);
+
+#                        foreach my $n2 (keys %to_build) {
+#                            my @subs = @{$to_build{$n2}->{subpacks}};
+#                            if (! grep($_ eq $n2, @done)) {
+#                                foreach my $sub (@subs) {
+#                                    my $so = source_of($sub, %to_build);
+#                                    $dep =~ m/([^\s]+).*/;
+#                                    if ( $sub eq $1 && ! grep($_ eq $so, @skipped) ) {
+#                                        $stop = 1;
+#                                    }
+#                                }
+#                            }
+#                        }
 
                     }
 

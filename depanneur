@@ -767,7 +767,10 @@ while (! $TERM) {
             my $pattern = "$localrepo/$dist/src/SRPMS/$name-$version-$release.*.rpm";
             my @binaries = glob $pattern;
             if (@binaries != 0 && ! $overwrite) {
+                info("skipping $name-$version-$release $arch $dist");
                 push(@skipped, $name);
+            } elsif (@binaries != 0 && $overwrite) {
+                print "*** overwriting $name-$version-$release $arch $dist ***\n";
             }
         }
     }
@@ -778,9 +781,6 @@ while (! $TERM) {
             my $release = $to_build{$name}->{release};
             my $pattern = "$localrepo/$dist/src/SRPMS/$name-$version-$release.*.rpm";
             my @binaries = glob $pattern;
-            if (@binaries != 0 && $overwrite) {
-                print "*** overwriting $name-$version-$release $arch $dist ***\n";
-            }
             if (@binaries == 0 || $overwrite) {
                 debug("Checking dependencies for $name");
                 my $dd = "";
@@ -790,7 +790,7 @@ while (! $TERM) {
                 if ( system("$virtualenv/usr/bin/check_unresolved $dd --depfile $order_dir/.repo.cache --configdir $dist_configs --dist $dist --archpath $archpath $fn") == 0 ) {
                     my $stop =  0;
                     my @deps = @{$to_build{$name}->{deps}};
-                    print "now looking into $name\n";
+                    debug("now looking into $name");
                     foreach my $dep (@deps) {
                         open(EXPAND,"$virtualenv/usr/bin/do_expanddeps --dist $dist --depfile $order_dir/.repo.cache --archpath $archpath --configdir $dist_configs \"$dep\" |") || die "Failed: $!\n";
                         while ( <EXPAND> ) {
@@ -798,7 +798,7 @@ while (! $TERM) {
                             my $ddep = $_;
                             my $so = source_of($ddep, %to_build);
                             if ( defined($so) && ($so ne $name) && (! grep($_ eq $so, @skipped)) && (! grep($_ eq $so, @done)) ) {
-                                print "Not adding $name for now, it needs $dep -> $ddep ($so)...\n";
+                                debug("Not adding $name for now, it needs $dep -> $ddep ($so)...");
                                 $stop = 1;
                             }
                         } 
@@ -824,10 +824,7 @@ while (! $TERM) {
                     }
                 }
 
-            } else {
-                info("skipping $name-$version-$release $arch $dist");
-                push(@skipped, $name);
-            }
+            } 
         }
     }
     if (@order == 0) {

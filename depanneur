@@ -288,8 +288,6 @@ sub fill_packs_from_git() {
     if ($skip == 1) {
         if ( $old_base ne "" ) {
             $old_base = basename($old_base);
-            #print "yyy $old_base\n";
-            print "xxx $pkg_path/$old_base/$spec_file\n";
             push(@packs, "$pkg_path/$old_base/$spec_file");
         } else {
             push(@packs, "$pkg_path/$pkg_name-$pkg_version-$pkg_release/$spec_file");

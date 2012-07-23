@@ -697,7 +697,10 @@ sub build_package {
     if ($MAX_THREADS > 1 ) {
         $redirect = "> /dev/null 2>&1";
     }
-    my $buildcmd = "sudo BUILD_ROOT=$scratch BUILD_DIR=\"$build_dir\" $virtualenv/usr/bin/build --uid $zuid:$zgid --jobs 4 $clean_option --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename $redirect  ";
+    if ($incremental) {
+        my $incremental_opt = "--short-circuit --stage -bc";
+    }
+    my $buildcmd = "sudo BUILD_ROOT=$scratch BUILD_DIR=\"$build_dir\" $virtualenv/usr/bin/build --uid $zuid:$zgid --jobs 4 $clean_option $incremental_opt --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename $redirect  ";
     debug("$buildcmd");
     if (system ($buildcmd) == 0 ) {
         system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";

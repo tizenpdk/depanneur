@@ -262,6 +262,7 @@ sub fill_packs_from_git() {
                     chomp;
                    $old_base = $_;
                }
+               close(GREP);
                $skip = 1;
             }
             my @lines = ();
@@ -684,7 +685,11 @@ sub build_package {
     }
     my $scratch = "$scratch_dir.$thread";
 
-    my $buildcmd = "sudo BUILD_ROOT=$scratch BUILD_DIR=\"$build_dir\" $virtualenv/usr/bin/build --jobs 4 $clean_option --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename > /dev/null 2>&1  ";
+    my $redirect = "";
+    if ($MAX_THREADS > 1 ) {
+        $redirect = "> /dev/null 2>&1";
+    }
+    my $buildcmd = "sudo BUILD_ROOT=$scratch BUILD_DIR=\"$build_dir\" $virtualenv/usr/bin/build --jobs 4 $clean_option --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename $redirect  ";
     debug("$buildcmd");
     if (system ($buildcmd) == 0 ) {
         system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";

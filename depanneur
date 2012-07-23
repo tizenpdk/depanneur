@@ -489,18 +489,18 @@ if ($binarylist ne "" && -e $binarylist )
         print "$p, ";
     }
     print "\n";
-
     foreach my $p (@tobuild) {
         my @deps = @{$packs{$p}->{deps}};    
         foreach my $dep (@deps) {
             debug($dep);
             foreach my $prr (keys %repo_assist) {
-                debug("=====>" . $prr);
-                if (grep $_ eq $dep, @{$repo_assist{$prr}->{provides}}) {
-                    my $mainp = source_of($prr, %packs);
+                debug("=> " . $prr);
+                $dep =~ m/([^\s]+)/;
+                if (grep $_ eq $1, @{$repo_assist{$prr}->{provides}}) {
+                    my $mainp = source_of($1, %packs);
                     if (defined($mainp)) {
-                        push(@tobuild, $mainp);
                         debug("adding $mainp because $p needs it");
+                        push(@tobuild, $mainp);
                     }
                 }
             }

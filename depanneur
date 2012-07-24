@@ -515,55 +515,19 @@ if ($binarylist ne "" && -e $binarylist ) {
     chomp(@bins);
     close(FILE);
     foreach my $b (@bins) {
-        next if $b eq "";
-        my $found = 0;
-        foreach my $name (keys %packs) {
-            my @sp = @{$packs{$name}->{subpacks}};
-            my $debuginfo = $b;
-            my $nb;
-            $debuginfo =~ s/(.*)-debuginfo/$1/;
-            $debuginfo =~ s/(.*)-debugsource/$1/;
-            $debuginfo =~ s/(.*)-docs/$1/;
-            if ($b ne $debuginfo) { 
-                $nb = $debuginfo;
-            } else {
-                $nb = $b;
+        open(EXPAND,"$virtualenv/usr/bin/do_expanddeps --dist $dist --depfile $order_dir/.repo.cache --archpath $archpath --configdir $dist_configs \"$b\" |") || die "Failed: $!\n";
+        while ( <EXPAND> ) {
+            chomp;
+            my $ddep = $_;
+            my $so = source_of($ddep, %packs);
+            if ( defined($so) && !(grep $_ eq $so, @tobuild)) {
+                push(@tobuild, $so);
             }
-            if ( grep $_ eq $nb, @sp ) {
-                push(@tobuild, $name);
-                $found = 1 ;
-                last;
-            } 
-        }
-        if (!$found) {
-            push(@tofind, $b);
-        }
+        } 
+        close(EXPAND);
     }
 
     print "Initial set:\n";
-    foreach my $p (@tobuild) {
-        print "$p, ";
-    }
-    print "\n";
-    foreach my $p (@tobuild) {
-        my @deps = @{$packs{$p}->{deps}};    
-        foreach my $dep (@deps) {
-            debug($dep);
-            foreach my $prr (keys %repo_assist) {
-                debug("=> " . $prr);
-                $dep =~ m/([^\s]+)/;
-                if (grep $_ eq $1, @{$repo_assist{$prr}->{provides}}) {
-                    my $mainp = source_of($1, %packs);
-                    if (defined($mainp)) {
-                        debug("adding $mainp because $p needs it");
-                        push(@tobuild, $mainp);
-                    }
-                }
-            }
-        }
-    }
-    debug("done");
-    print "Improved set:\n";
     foreach my $p (@tobuild) {
         print "$p, ";
     }

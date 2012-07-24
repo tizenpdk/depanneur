@@ -164,6 +164,8 @@ if ( $exclude_from_file ne "" && -e $exclude_from_file ) {
 
 
 mkdir_p($order_dir);
+mkdir_p "$localrepo/$dist/$arch/logs/success";
+mkdir_p "$localrepo/$dist/$arch/logs/fail";
 
 my @packs = @ARGV;
 my $package_path = "";
@@ -740,8 +742,28 @@ if ( ! -e "$localrepo/$dist/$arch/RPMS" ) {
     print "Creating repo...";
     createrepo ($arch, $dist);
 }
-mkdir_p "$localrepo/$dist/$arch/logs/success";
-mkdir_p "$localrepo/$dist/$arch/logs/fail";
+
+sub get_deps {
+    my ($name, %_to_build) = @_;
+    my $stop =  0;
+    my @deps = @{$_to_build{$name}->{deps}};
+    debug("now looking into $name");
+    foreach my $dep (@deps) {
+        open(EXPAND,"$virtualenv/usr/bin/do_expanddeps --dist $dist --depfile $order_dir/.repo.cache --archpath $archpath --configdir $dist_configs \"$dep\" |") || die "Failed: $!\n";
+        while ( <EXPAND> ) {
+            chomp;
+            my $ddep = $_;
+            my $so = source_of($ddep, %_to_build);
+            if ( defined($so) && ($so ne $name) && (! grep($_ eq $so, @skipped)) && (! grep($_ eq $so, @done)) ) {
+                debug("Not adding $name for now, it needs $dep -> $ddep ($so)...");
+                $stop = 1;
+                last;
+            }
+        } 
+        close(EXPAND);
+    }
+    return $stop;
+}
 
 while (! $TERM) {
     my @order = ();
@@ -793,25 +815,8 @@ while (! $TERM) {
                     $dd = "--debug";
                 }
                 if ( system("$virtualenv/usr/bin/check_unresolved $dd --depfile $order_dir/.repo.cache --configdir $dist_configs --dist $dist --archpath $archpath $fn") == 0 ) {
-                    my $stop =  0;
-                    my @deps = @{$to_build{$name}->{deps}};
-                    debug("now looking into $name");
-                    foreach my $dep (@deps) {
-                        open(EXPAND,"$virtualenv/usr/bin/do_expanddeps --dist $dist --depfile $order_dir/.repo.cache --archpath $archpath --configdir $dist_configs \"$dep\" |") || die "Failed: $!\n";
-                        while ( <EXPAND> ) {
-                            chomp;
-                            my $ddep = $_;
-                            my $so = source_of($ddep, %to_build);
-                            if ( defined($so) && ($so ne $name) && (! grep($_ eq $so, @skipped)) && (! grep($_ eq $so, @done)) ) {
-                                debug("Not adding $name for now, it needs $dep -> $ddep ($so)...");
-                                $stop = 1;
-                                last;
-                            }
-                        } 
-                        close(EXPAND);
-                    }
 
-                    if ($stop == 0 ) {
+                    if (get_deps($name, %to_build) == 0 ) {
                         push(@order, $name);
                     }
                 }

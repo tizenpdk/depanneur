@@ -351,13 +351,6 @@ sub parse_packs {
 
 sub expand_deps {
     my $rpmdeps = "$order_dir/.repo.cache";
-    if ( ! -e $rpmdeps ) {
-        #my $repo_assist = $Config{main_repo_url};
-        #debug("retrieving dependency data from server....");
-        #if (system("$build_dir/createrepomddeps --cachedir=$order_dir $repo_assist > $rpmdeps ") != 0 ) {
-        #    return 1;
-        #}
-    }
     my (%fn, %prov, %req);
 
     my %packs;
@@ -460,10 +453,10 @@ my %packs = parse_packs(@packs);
 my @tobuild = ();
 my @tofind = ();
 my @final = ();
-if ($binarylist ne "" && -e $binarylist ) 
-{
-    my %repo_assist = expand_deps();
 
+
+if ($binarylist ne "" && -e $binarylist ) {
+    my %repo_assist = expand_deps();
     open FILE, "<", $binarylist or die $!;
     my @bins = <FILE>;
     chomp(@bins);
@@ -474,10 +467,10 @@ if ($binarylist ne "" && -e $binarylist )
         foreach my $name (keys %packs) {
             my @sp = @{$packs{$name}->{subpacks}};
             my $debuginfo = $b;
+            my $nb;
             $debuginfo =~ s/(.*)-debuginfo/$1/;
             $debuginfo =~ s/(.*)-debugsource/$1/;
             $debuginfo =~ s/(.*)-docs/$1/;
-            my $nb;
             if ($b ne $debuginfo) { 
                 $nb = $debuginfo;
             } else {
@@ -522,10 +515,6 @@ if ($binarylist ne "" && -e $binarylist )
         print "$p, ";
     }
     print "\n";
-    #foreach my $p (@tobuild) {
-    #    foreach my $req (@{$repo_assist{$prr}->{requires}}) {
-    #    }
-    #}
 
     foreach my $name (@tobuild) {
         my $fn = $packs{$name}->{filename};
@@ -596,11 +585,8 @@ sub createrepo
     my $dist = shift;
 
     mkdir_p "$localrepo/$dist/src/SRPMS";
-    system ("cd $localrepo/$dist/src && rm -rf repodata && createrepo --changelog-limit=0 -q . > /dev/null 2>&1 ") == 0
-        or die "createrepo failed: $?\n";
-
+    system ("cd $localrepo/$dist/src && rm -rf repodata && createrepo --changelog-limit=0 -q . > /dev/null 2>&1 ") == 0 or die "createrepo failed: $?\n";
     mkdir_p "$localrepo/$dist/$arch/RPMS";
-
     
     my $groups = "";
     if ( -e $groupfile ) {
@@ -612,7 +598,7 @@ sub createrepo
 }
 
 my @errors :shared;
-
+my $packages_built :shared  = 0;
 my %workers = ();
 
 for(my $w = 0; $w < $MAX_THREADS; $w++) {
@@ -650,7 +636,6 @@ sub set_idle {
     $workers{$worker} = { 'state' => 'idle' , 'tid' => undef};
 }
 
-my $packages_built :shared  = 0;
 
 sub build_package {
     my ($name, $thread) = @_;
@@ -835,23 +820,10 @@ while (! $TERM) {
                             if ( defined($so) && ($so ne $name) && (! grep($_ eq $so, @skipped)) && (! grep($_ eq $so, @done)) ) {
                                 debug("Not adding $name for now, it needs $dep -> $ddep ($so)...");
                                 $stop = 1;
+                                last;
                             }
                         } 
                         close(EXPAND);
-
-#                        foreach my $n2 (keys %to_build) {
-#                            my @subs = @{$to_build{$n2}->{subpacks}};
-#                            if (! grep($_ eq $n2, @done)) {
-#                                foreach my $sub (@subs) {
-#                                    my $so = source_of($sub, %to_build);
-#                                    $dep =~ m/([^\s]+).*/;
-#                                    if ( $sub eq $1 && ! grep($_ eq $so, @skipped) ) {
-#                                        $stop = 1;
-#                                    }
-#                                }
-#                            }
-#                        }
-
                     }
 
                     if ($stop == 0 ) {

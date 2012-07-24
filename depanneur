@@ -73,6 +73,7 @@ my $keepgoing = 0;
 my $build_root = $ENV{TIZEN_BUILD_ROOT};
 my $localrepo = "$build_root/local/repos";
 my $order_dir = "$build_root/local/order";
+my $scratch_dir = "$build_root/local/scratch.$arch";
 
 
 my $cache_dir = "$build_root/local/cache";
@@ -89,8 +90,19 @@ my $run_configure = 0;
 my $overwrite = 0;
 my $MAX_THREADS = 1;
 my $suffix = "";
-my @cleaned : shared = ();
 my $exclude_from_file = "$build_root/meta/exclude";
+
+my @tobuild = ();
+my @tofind = ();
+my @final = ();
+my %to_build = ();
+my @done = ();
+my @skipped = ();
+
+my @cleaned : shared = ();
+my @errors :shared;
+my $packages_built :shared  = 0;
+my %workers = ();
 
 GetOptions (
     "arch=s" => \$arch,
@@ -116,7 +128,31 @@ GetOptions (
     "threads=s" => \$MAX_THREADS,
     );
 
-my $scratch_dir = "$build_root/local/scratch.$arch";
+sub mkdir_p($) {
+    my $path = shift;
+    my $err_msg;
+    # attempt a 'mkdir -p' on the provided path and catch any errors returned
+    my $mkdir_out = File::Path::make_path( $path, { error => \my $err } );
+    # catch and return the error if there was one
+    if (@$err) {
+        for my $diag (@$err) {
+            my ( $file, $message ) = %$diag;
+            $err_msg .= $message;
+        }
+        print STDERR "$err_msg";
+    }
+} 
+
+sub debug {
+    my $msg = shift;
+    $msg =~ s#://[^@]*@#://#g;
+    print YELLOW, "DEBUG: $msg\n", RESET if $debug == 1;
+}
+
+sub info {
+    my $msg = shift;
+    print GREEN, "$msg\n", RESET;
+}
 
 if ( $exclude_from_file ne "" && -e $exclude_from_file ) {
     debug("using $exclude_from_file for package exclusion");
@@ -127,23 +163,7 @@ if ( $exclude_from_file ne "" && -e $exclude_from_file ) {
 }
 
 
-sub mkdir_p($) {
-    my $path = shift;
-    my $err_msg;
-# attempt a 'mkdir -p' on the provided path and catch any errors returned
-    my $mkdir_out = File::Path::make_path( $path, { error => \my $err } );
-# catch and return the error if there was one
-    if (@$err) {
-        for my $diag (@$err) {
-            my ( $file, $message ) = %$diag;
-            $err_msg .= $message;
-        }
-        print STDERR "$err_msg";
-    }
-} 
-
 mkdir_p($order_dir);
-
 
 my @packs = @ARGV;
 my $package_path = "";
@@ -167,20 +187,10 @@ foreach my $r (@{$Config->{Repositories}}) {
 }
 
 
-
-sub debug {
-    my $msg = shift;
-    $msg =~ s#://[^@]*@#://#g;
-    print YELLOW, "DEBUG: $msg\n", RESET if $debug == 1;
-}
-sub info {
-    my $msg = shift;
-    print GREEN, "$msg\n", RESET;
-}
-
 if ( -d "packaging" && -d ".git" ) {
     $path = cwd();
 }
+
 if ( $path eq "" ) {
     $package_path = "$build_root/packages";
 } else {
@@ -360,7 +370,7 @@ sub expand_deps {
     my %packs_arch;
     my %packs_done;
     open(F, '<', $rpmdeps) || die("$rpmdeps: $!\n");
-# WARNING: the following code assumes that the 'I' tag comes last
+    # WARNING: the following code assumes that the 'I' tag comes last
     my ($pkgF, $pkgP, $pkgR);
     while(<F>) {
       chomp;
@@ -444,16 +454,57 @@ sub expand_deps {
     return %repo;
 }
 
+sub createrepo
+{
+    my $arch = shift;
+    my $dist = shift;
 
+    mkdir_p "$localrepo/$dist/src/SRPMS";
+    system ("cd $localrepo/$dist/src && rm -rf repodata && createrepo --changelog-limit=0 -q . > /dev/null 2>&1 ") == 0 or die "createrepo failed: $?\n";
+    mkdir_p "$localrepo/$dist/$arch/RPMS";
+    
+    my $groups = "";
+    if ( -e $groupfile ) {
+        $groups = " --groupfile=$groupfile ";
+    }
+
+    system ("cd $localrepo/$dist/$arch && rm -rf repodata && createrepo $groups --changelog-limit=0 -q --exclude 'logs/*rpm' . > /dev/null 2>&1 ") == 0
+        or die "createrepo failed: $?\n";
+}
+
+sub find_idle {
+    my $idle = -1;
+    foreach my $w (keys %workers) {
+        my $tid = $workers{$w}->{tid};
+        my $state = $workers{$w}->{state};
+        if (! defined(threads->object($tid))) {
+            set_idle($w);
+            $idle = $w;
+            last;
+        }
+    }
+    foreach my $w (keys %workers) {
+        if ( $workers{$w}->{state} eq 'idle' ) {
+            $idle = $w;
+            last;
+        }
+    }
+    return $idle;
+}
+
+sub set_busy {
+    my $worker = shift;
+    my $thread = shift;
+    $workers{$worker} = { 'state' => 'busy', 'tid' => $thread };
+}
+
+sub set_idle {
+    my $worker = shift;
+    $workers{$worker} = { 'state' => 'idle' , 'tid' => undef};
+}
 
 print "Parsing package data...\n";
 my %packs = parse_packs(@packs);
-
-
-my @tobuild = ();
-my @tofind = ();
-my @final = ();
-
 
 if ($binarylist ne "" && -e $binarylist ) {
     my %repo_assist = expand_deps();
@@ -556,9 +607,6 @@ if ($binarylist ne "" && -e $binarylist ) {
     exit 1;
 }
 
-
-
-
 sub source_of {
     my ($sub, %packs) = @_;
     foreach my $x (keys %packs) {
@@ -570,81 +618,20 @@ sub source_of {
     return undef;
 }
 
-my %to_build = ();
 if ($binarylist ne "") {
     %to_build = parse_packs(@final);
 } else {
     %to_build = parse_packs(@packs);
 }
 
-
-
-sub createrepo
-{
-    my $arch = shift;
-    my $dist = shift;
-
-    mkdir_p "$localrepo/$dist/src/SRPMS";
-    system ("cd $localrepo/$dist/src && rm -rf repodata && createrepo --changelog-limit=0 -q . > /dev/null 2>&1 ") == 0 or die "createrepo failed: $?\n";
-    mkdir_p "$localrepo/$dist/$arch/RPMS";
-    
-    my $groups = "";
-    if ( -e $groupfile ) {
-        $groups = " --groupfile=$groupfile ";
-    }
-
-    system ("cd $localrepo/$dist/$arch && rm -rf repodata && createrepo $groups --changelog-limit=0 -q --exclude 'logs/*rpm' . > /dev/null 2>&1 ") == 0
-        or die "createrepo failed: $?\n";
-}
-
-my @errors :shared;
-my $packages_built :shared  = 0;
-my %workers = ();
-
 for(my $w = 0; $w < $MAX_THREADS; $w++) {
     $workers{$w} = { 'state' => 'idle' , 'tid' => undef };
-}
-
-sub find_idle {
-    my $idle = -1;
-    foreach my $w (keys %workers) {
-        my $tid = $workers{$w}->{tid};
-        my $state = $workers{$w}->{state};
-        if (! defined(threads->object($tid))) {
-            set_idle($w);
-            $idle = $w;
-            last;
-        }
-    }
-    foreach my $w (keys %workers) {
-        if ( $workers{$w}->{state} eq 'idle' ) {
-            $idle = $w;
-            last;
-        }
-    }
-    return $idle;
-}
-
-sub set_busy {
-    my $worker = shift;
-    my $thread = shift;
-    $workers{$worker} = { 'state' => 'busy', 'tid' => $thread };
-}
-
-sub set_idle {
-    my $worker = shift;
-    $workers{$worker} = { 'state' => 'idle' , 'tid' => undef};
 }
 
 
 sub build_package {
     my ($name, $thread) = @_;
     use vars qw(@package_repos);
-    #{
-    #    lock($DETACHING);
-    #    threads->detach() if ! threads->is_detached();
-    #}
-    #return(0);
 
     my $version = $to_build{$name}->{version};
     my $release = $to_build{$name}->{release};
@@ -658,7 +645,7 @@ sub build_package {
     }
 
     # Rebuild the package.
-    print "*** building $name-$version-$release $arch $dist (worker: $thread) ***\n";
+    info("*** building $name-$version-$release $arch $dist (worker: $thread) ***");
 
     $ENV{'BUILD_DIR'} = $build_dir;
 
@@ -688,17 +675,17 @@ sub build_package {
         print "Doing incremental build\n";
         my $buildcmd = "";
         if ( ! -d "$scratch/home/abuild/rpmbuild/BUILD/$name-$version" ) {
-            print "Build directory exists\n";
-            my $incremental_opt = "--stage=\"-bp\"";
+            debug("Build directory exists");
+            $incremental_opt = "--stage=\"-bp\"";
             $scratch = "$scratch_dir.incremental";
             $buildcmd = "sudo BUILD_ROOT=$scratch BUILD_DIR=\"$build_dir\" $virtualenv/usr/bin/build --uid $zuid:$zgid --jobs 4 $clean_option $incremental_opt --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename $redirect  ";
             system ($buildcmd);
         } else {
-            print "Build directory does not exist\n";
+            info("Build directory does not exist");
         }
         my $mount = "sudo mount -o bind $path $scratch/home/abuild/rpmbuild/BUILD/$name-$version";
         system($mount);
-        my $incremental_opt = "--short-circuit --stage=\"-bc\"";
+        $incremental_opt = "--short-circuit --stage=\"-bc\"";
         my $no_configure = "";
         if ($run_configure == 1 ) {
             $no_configure = "--define '%configure echo' --define '%autogen echo' --define '%reconfigure echo'";
@@ -715,6 +702,7 @@ sub build_package {
         print GREEN, "finished incremental building $name\n", RESET;
         exit(1);
     }
+
     my $buildcmd = "sudo BUILD_ROOT=$scratch BUILD_DIR=\"$build_dir\" $virtualenv/usr/bin/build --uid $zuid:$zgid --jobs 4 $clean_option $incremental_opt --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename $redirect  ";
     debug("$buildcmd");
     if (system ($buildcmd) == 0 ) {
@@ -748,9 +736,6 @@ sub build_package {
 
 }
 
-my @done = ();
-my @skipped = ();
-my %caught;
 if ( ! -e "$localrepo/$dist/$arch/RPMS" ) {
     print "Creating repo...";
     createrepo ($arch, $dist);

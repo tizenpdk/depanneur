@@ -253,7 +253,7 @@ sub fill_packs_from_git() {
     } else {
         return;
     }
-    my $config = Build::read_config_dist($dist, "i586", $dist_configs);
+    my $config = Build::read_config_dist($dist, $arch, $dist_configs);
     my $pack = Build::Rpm::parse($config, $spec);
     my $pkg_name = $pack->{name};
     my $pkg_version = $pack->{version};
@@ -316,7 +316,7 @@ sub parse_packs {
     my @packs = @_;
     my %packs = ();
     foreach my $spec (@packs) {
-        my $config = Build::read_config_dist($dist, "i586", $dist_configs);
+        my $config = Build::read_config_dist($dist, $arch, $dist_configs);
         my $path_to_spec = "";
         if ( -e $spec ) {
             $path_to_spec =  $spec;

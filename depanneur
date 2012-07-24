@@ -325,8 +325,6 @@ sub prepare_git {
 
 sub parse_packs {
     my ($config, @packs) = @_;
-    print Dumper($config);
-
     my %packs = ();
     foreach my $spec (@packs) {
         my $pack = Build::Rpm::parse($config, $spec);
@@ -351,6 +349,7 @@ sub parse_packs {
 }
 
 sub expand_deps {
+    my $spec = shift;
     my $rpmdeps = "$order_dir/.repo.cache";
     my (%fn, %prov, %req);
 
@@ -442,7 +441,33 @@ sub expand_deps {
       $r->{'requires'} = \@re;
       $repo{$pack} = $r;
     }
-    return %repo;
+    my ($packname, $packvers, $subpacks, @packdeps);
+    $subpacks = [];
+
+    if ($spec) {
+      my $d;
+      if ($spec =~ /\.kiwi$/) {
+        # just set up kiwi root for now
+        $d = {
+          'deps' => [ 'kiwi', 'zypper', 'createrepo', 'squashfs' ],
+          'subpacks' => [],
+        };
+      } else {
+        $d = Build::parse($cf, $spec);
+      }
+      $packname = $d->{'name'};
+      $packvers = $d->{'version'};
+      $subpacks = $d->{'subpacks'};
+      @packdeps = @{$d->{'deps'} || []};
+    }
+
+    Build::readdeps($cf, undef, \%repo);
+
+    #######################################################################
+    my @extradeps = ();
+    my @bdeps = Build::get_build($cf, $subpacks, @packdeps, @extradeps);
+
+    return @bdeps;
 }
 
 sub createrepo
@@ -504,103 +529,6 @@ sub source_of {
     }
     return undef;
 }
-# MAIN
-print "Start building packages from: " . $package_path . " ($style)\n";
-
-if ($buildall || @packs == 0 ) {
-    if ($style eq "git") {
-        File::Find::find({wanted => \&git_wanted}, $package_path );
-    } elsif ($style eq "obs") {
-        File::Find::find({wanted => \&obs_wanted}, $package_path );
-    }
-} else {
-    if (@packs == 0 && $path eq "") {
-        print "Please provide a list of packages to build.";
-        exit 1;
-    }
-}
-
-print "Prepare sources...\n";
-foreach my $sp (@original_specs) {
-    prepare_git($config, $sp);
-}
-
-print "Parsing package data...\n";
-my %packs = parse_packs($config, @packs);
-
-if ($binarylist ne "" && -e $binarylist ) {
-    open FILE, "<", $binarylist or die $!;
-    my @bins = <FILE>;
-    chomp(@bins);
-    close(FILE);
-    foreach my $b (@bins) {
-        open(EXPAND,"$virtualenv/usr/bin/do_expanddeps --dist $dist --depfile $order_dir/.repo.cache --archpath $archpath --configdir $dist_configs \"$b\" |") || die "Failed: $!\n";
-        while ( <EXPAND> ) {
-            chomp;
-            my $ddep = $_;
-            my $so = source_of($ddep, %packs);
-            if ( defined($so) && !(grep $_ eq $so, @tobuild)) {
-                push(@tobuild, $so);
-            }
-        } 
-        close(EXPAND);
-    }
-
-    print "Initial set:\n";
-    foreach my $p (@tobuild) {
-        print " $p, ";
-    }
-    print "\n";
-
-    foreach my $name (@tobuild) {
-        my $fn = $packs{$name}->{filename};
-        push(@final, $fn);
-    }
-
-    debug("Still " . ($#tofind + 1 ) . " to find:");
-    debug("Check if binaries are provided by a repo");
-    if ( ! -e "$order_dir/.repo.cache" ) {
-        system("> $order_dir/.repo.cache");
-        foreach my $repo (@package_repos) {
-            my $cmd = "$build_dir/createrepomddeps --cachedir=$order_dir $repo >> $order_dir/.repo.cache ";
-            system($cmd);
-        }
-    }
-    my $rpmdeps = "$order_dir/.repo.cache";
-    open(F, '<', $rpmdeps) || die("$rpmdeps: $!\n");
-    my @bindeps = <F>;
-    close(F);
-    chomp(@bindeps);
-    my @tofind_2 = ();
-    foreach my $missing (@tofind) {
-        debug("Checking for $missing: ");
-        if ( grep /^I:$missing.(i586|i686|noarch)-.*/, @bindeps ) {
-            debug("provided as binary, skipping...");
-        } else {
-            debug("can't be found.");
-            push(@tofind_2, $missing);
-        }
-    }
-    if ($#tofind_2 > 0 ) {
-        debug("Still " . ($#tofind_2 + 1 ) . " to find:");
-    }
-    foreach my $m (@tofind_2) {
-        debug($m);
-    }
-    %to_build = parse_packs($config, @final);
-} elsif ( $binarylist ne "") {
-    print STDERR "Cant find binary list for image\n";
-    exit 1;
-} else {
-    %to_build = %packs
-}
-
-
-# Prepare Workers
-for(my $w = 0; $w < $MAX_THREADS; $w++) {
-    $workers{$w} = { 'state' => 'idle' , 'tid' => undef };
-}
-
 
 sub build_package {
     my ($name, $thread) = @_;
@@ -709,10 +637,6 @@ sub build_package {
 
 }
 
-if ( ! -e "$localrepo/$dist/$arch/RPMS" ) {
-    print "Creating repo...";
-    createrepo ($arch, $dist);
-}
 
 sub get_deps {
     my ($name, %_to_build) = @_;
@@ -734,6 +658,108 @@ sub get_deps {
         close(EXPAND);
     }
     return $stop;
+}
+
+# MAIN
+print "Start building packages from: " . $package_path . " ($style)\n";
+
+if ($buildall || @packs == 0 ) {
+    if ($style eq "git") {
+        File::Find::find({wanted => \&git_wanted}, $package_path );
+    } elsif ($style eq "obs") {
+        File::Find::find({wanted => \&obs_wanted}, $package_path );
+    }
+} else {
+    if (@packs == 0 && $path eq "") {
+        print "Please provide a list of packages to build.";
+        exit 1;
+    }
+}
+
+print "Prepare sources...\n";
+foreach my $sp (@original_specs) {
+    prepare_git($config, $sp);
+}
+
+print "Parsing package data...\n";
+my %packs = parse_packs($config, @packs);
+
+if ($binarylist ne "" && -e $binarylist ) {
+    open FILE, "<", $binarylist or die $!;
+    my @bins = <FILE>;
+    chomp(@bins);
+    close(FILE);
+    foreach my $b (@bins) {
+        open(EXPAND,"$virtualenv/usr/bin/do_expanddeps --dist $dist --depfile $order_dir/.repo.cache --archpath $archpath --configdir $dist_configs \"$b\" |") || die "Failed: $!\n";
+        while ( <EXPAND> ) {
+            chomp;
+            my $ddep = $_;
+            my $so = source_of($ddep, %packs);
+            if ( defined($so) && !(grep $_ eq $so, @tobuild)) {
+                push(@tobuild, $so);
+            }
+        } 
+        close(EXPAND);
+    }
+
+    print "Initial set:\n";
+    foreach my $p (@tobuild) {
+        print " $p, ";
+    }
+    print "\n";
+
+    foreach my $name (@tobuild) {
+        my $fn = $packs{$name}->{filename};
+        push(@final, $fn);
+    }
+
+    debug("Still " . ($#tofind + 1 ) . " to find:");
+    debug("Check if binaries are provided by a repo");
+    if ( ! -e "$order_dir/.repo.cache" ) {
+        system("> $order_dir/.repo.cache");
+        foreach my $repo (@package_repos) {
+            my $cmd = "$build_dir/createrepomddeps --cachedir=$order_dir $repo >> $order_dir/.repo.cache ";
+            system($cmd);
+        }
+    }
+    my $rpmdeps = "$order_dir/.repo.cache";
+    open(F, '<', $rpmdeps) || die("$rpmdeps: $!\n");
+    my @bindeps = <F>;
+    close(F);
+    chomp(@bindeps);
+    my @tofind_2 = ();
+    foreach my $missing (@tofind) {
+        debug("Checking for $missing: ");
+        if ( grep /^I:$missing.(i586|i686|noarch)-.*/, @bindeps ) {
+            debug("provided as binary, skipping...");
+        } else {
+            debug("can't be found.");
+            push(@tofind_2, $missing);
+        }
+    }
+    if ($#tofind_2 > 0 ) {
+        debug("Still " . ($#tofind_2 + 1 ) . " to find:");
+    }
+    foreach my $m (@tofind_2) {
+        debug($m);
+    }
+    %to_build = parse_packs($config, @final);
+} elsif ( $binarylist ne "") {
+    print STDERR "Cant find binary list for image\n";
+    exit 1;
+} else {
+    %to_build = %packs
+}
+
+
+# Prepare Workers
+for(my $w = 0; $w < $MAX_THREADS; $w++) {
+    $workers{$w} = { 'state' => 'idle' , 'tid' => undef };
+}
+
+if ( ! -e "$localrepo/$dist/$arch/RPMS" ) {
+    print "Creating repo...";
+    createrepo ($arch, $dist);
 }
 
 while (! $TERM) {
@@ -773,7 +799,10 @@ while (! $TERM) {
         }
     }
     foreach my $name (keys %to_build) {
-        if( ! (grep $_ eq $name, @done) && ! (grep $_ eq $name, @exclude) && ! (grep $_ eq $name, @skipped)) {
+        if( ! (grep $_ eq $name, @done) && 
+            ! (grep $_ eq $name, @exclude) && 
+            ! (grep $_ eq $name, @skipped)) 
+        {
             my $fn = $to_build{$name}->{filename};
             my $version = $to_build{$name}->{version};
             my $release = $to_build{$name}->{release};
@@ -785,11 +814,12 @@ while (! $TERM) {
                 if ( $debug ) {
                     $dd = "--debug";
                 }
-                if ( system("$virtualenv/usr/bin/check_unresolved $dd --depfile $order_dir/.repo.cache --configdir $dist_configs --dist $dist --archpath $archpath $fn") == 0 ) {
-
-                    if (get_deps($name, %to_build) == 0 ) {
-                        push(@order, $name);
-                    }
+                my @bdeps = expand_deps($fn);
+                if (!shift @bdeps ) {
+                    debug("expansion error");
+                    debug("  $_") for @bdeps;
+                } else {
+                    push(@order, $name);
                 }
 
             } 

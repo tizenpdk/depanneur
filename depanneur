@@ -638,27 +638,6 @@ sub build_package {
 }
 
 
-sub get_deps {
-    my ($name, %_to_build) = @_;
-    my $stop =  0;
-    my @deps = @{$_to_build{$name}->{deps}};
-    debug("now looking into $name");
-    foreach my $dep (@deps) {
-        open(EXPAND,"$virtualenv/usr/bin/do_expanddeps --dist $dist --depfile $order_dir/.repo.cache --archpath $archpath --configdir $dist_configs \"$dep\" |") || die "Failed: $!\n";
-        while ( <EXPAND> ) {
-            chomp;
-            my $ddep = $_;
-            my $so = source_of($ddep, %_to_build);
-            if ( defined($so) && ($so ne $name) && (! grep($_ eq $so, @skipped)) && (! grep($_ eq $so, @done)) ) {
-                debug("Not adding $name for now, it needs $dep -> $ddep ($so)...");
-                $stop = 1;
-                last;
-            }
-        } 
-        close(EXPAND);
-    }
-    return $stop;
-}
 
 # MAIN
 print "Start building packages from: " . $package_path . " ($style)\n";
@@ -690,16 +669,12 @@ if ($binarylist ne "" && -e $binarylist ) {
     chomp(@bins);
     close(FILE);
     foreach my $b (@bins) {
-        open(EXPAND,"$virtualenv/usr/bin/do_expanddeps --dist $dist --depfile $order_dir/.repo.cache --archpath $archpath --configdir $dist_configs \"$b\" |") || die "Failed: $!\n";
-        while ( <EXPAND> ) {
-            chomp;
-            my $ddep = $_;
-            my $so = source_of($ddep, %packs);
-            if ( defined($so) && !(grep $_ eq $so, @tobuild)) {
-                push(@tobuild, $so);
-            }
-        } 
-        close(EXPAND);
+        my @bdeps = expand_deps($b);
+        if (!shift @bdeps ) {
+            debug("expansion error");
+            debug("  $_") for @bdeps;
+        } else {
+        }
     }
 
     print "Initial set:\n";
@@ -798,6 +773,15 @@ while (! $TERM) {
             }
         }
     }
+    my @o = ();
+    #foreach my $name (keys %to_build) {
+    #    push(@o,$name);
+    #}
+    #print "Before order\n";
+    #print " " . $_ . "\n" foreach (@o);
+    #@o=Build::order($config, @o);
+    #print "After order\n";
+    #print " " . $_ . "\n" foreach (@o);
     foreach my $name (keys %to_build) {
         if( ! (grep $_ eq $name, @done) && 
             ! (grep $_ eq $name, @exclude) && 
@@ -819,7 +803,19 @@ while (! $TERM) {
                     debug("expansion error");
                     debug("  $_") for @bdeps;
                 } else {
-                    push(@order, $name);
+                    my $add = 1;
+                    foreach my $depp (@bdeps) {
+                        my $so = source_of($depp, %to_build);
+                        if (defined($so) && $name ne $so
+                            && (! grep($_ eq $so, @skipped)) && (! grep($_ eq $so, @done))) {
+                            print "not adding $name, since it depends on $so\n";
+                            $add = 0;
+                            last;
+                        }
+                    }
+                    if ($add == 1 ) {
+                        push(@order, $name);
+                    }
                 }
 
             } 

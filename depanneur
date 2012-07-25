@@ -668,55 +668,71 @@ if ($binarylist ne "" && -e $binarylist ) {
     my @bins = <FILE>;
     chomp(@bins);
     close(FILE);
+    my @alldeps = ();
     foreach my $b (@bins) {
-        my @bdeps = expand_deps($b);
+        next if $b eq "";
+        my $found = 0;
+        foreach my $name (keys %packs) {
+            my @sp = @{$packs{$name}->{subpacks}};
+            my $debuginfo = $b;
+            $debuginfo =~ s/(.*)-debuginfo/$1/;
+            $debuginfo =~ s/(.*)-debugsource/$1/;
+            $debuginfo =~ s/(.*)-docs/$1/;
+            my $nb;
+            if ($b ne $debuginfo) { 
+                $nb = $debuginfo;
+            } else {
+                $nb = $b;
+            }
+            if ( grep $_ eq $nb, @sp ) {
+                push(@tobuild, $name);
+                $found = 1 ;
+                last;
+            } 
+        }
+        if (!$found) {
+            push(@tofind, $b);
+        }
+    }
+    
+    #print $_ . ", " foreach(sort @tobuild);
+    #print "\n";
+    #print $_ . ", " foreach(sort @tofind);
+    #print "\n";
+    foreach my $b (@tobuild) {
+        my @bdeps = expand_deps($packs{$b}->{filename});
         if (!shift @bdeps ) {
             debug("expansion error");
             debug("  $_") for @bdeps;
         } else {
+            #print $b . ": ";
+            #print $_ . ", " foreach(sort @bdeps);
+            #print "\n";
+            @alldeps = (@bdeps, @alldeps);
+        }
+    }
+    my %hash = map { $_, 1 } @alldeps;
+    my @allbins = keys %hash;
+    #print "Required dependencies: \n ";
+    #print $_ . ", " foreach(sort @allbins);
+    #print "\n";
+    foreach (@allbins) {
+        my $so = source_of($_, %packs);
+        if ( defined($so)) {
+            push(@tobuild, $so);
         }
     }
 
+    %hash = map { $_, 1 } @tobuild;
+    @tobuild = keys %hash;
     print "Initial set:\n";
     foreach my $p (@tobuild) {
         print " $p, ";
     }
     print "\n";
-
     foreach my $name (@tobuild) {
         my $fn = $packs{$name}->{filename};
         push(@final, $fn);
-    }
-
-    debug("Still " . ($#tofind + 1 ) . " to find:");
-    debug("Check if binaries are provided by a repo");
-    if ( ! -e "$order_dir/.repo.cache" ) {
-        system("> $order_dir/.repo.cache");
-        foreach my $repo (@package_repos) {
-            my $cmd = "$build_dir/createrepomddeps --cachedir=$order_dir $repo >> $order_dir/.repo.cache ";
-            system($cmd);
-        }
-    }
-    my $rpmdeps = "$order_dir/.repo.cache";
-    open(F, '<', $rpmdeps) || die("$rpmdeps: $!\n");
-    my @bindeps = <F>;
-    close(F);
-    chomp(@bindeps);
-    my @tofind_2 = ();
-    foreach my $missing (@tofind) {
-        debug("Checking for $missing: ");
-        if ( grep /^I:$missing.(i586|i686|noarch)-.*/, @bindeps ) {
-            debug("provided as binary, skipping...");
-        } else {
-            debug("can't be found.");
-            push(@tofind_2, $missing);
-        }
-    }
-    if ($#tofind_2 > 0 ) {
-        debug("Still " . ($#tofind_2 + 1 ) . " to find:");
-    }
-    foreach my $m (@tofind_2) {
-        debug($m);
     }
     %to_build = parse_packs($config, @final);
 } elsif ( $binarylist ne "") {

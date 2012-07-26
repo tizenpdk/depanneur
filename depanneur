@@ -584,7 +584,7 @@ sub build_package {
         } else {
             info("Build directory does not exist");
         }
-        my $mount = "sudo mount -o bind $path $scratch/home/abuild/rpmbuild/BUILD/$name-$version";
+        my $mount = "sudo mount -o bind $package_path $scratch/home/abuild/rpmbuild/BUILD/$name-$version";
         system($mount);
         $incremental_opt = "--short-circuit --stage=\"-bc\"";
         my $no_configure = "";

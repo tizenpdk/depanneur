@@ -169,7 +169,6 @@ sub info {
     print GREEN, "$msg\n", RESET;
 }
 
-my $config = Build::read_config_dist($dist, $arch, $dist_configs);
 
 if ( $exclude_from_file ne "" && -e $exclude_from_file ) {
     debug("using $exclude_from_file for package exclusion");
@@ -189,7 +188,7 @@ my @packs = @ARGV;
 my $package_path = "";
 # FIXME
 
-my @arm_archs = ("armv7l", "noarch");
+my @arm_archs = ( "armv7el" , "armv7l", "noarch");
 my @ix86_archs = ("i586", "i686", "noarch");
 my @archs = ();
 if ( $arch eq "i586" ) {
@@ -201,6 +200,7 @@ my $archpath;
 foreach my $ap (@archs) {
     $archpath .= $ap.":"; 
 }
+my $config = Build::read_config_dist($dist, $archpath, $dist_configs);
 
 if ( -d "packaging" && -d ".git" ) {
     $package_path = cwd();
@@ -414,7 +414,8 @@ sub expand_deps {
       $packs{$_} ||= "$_.$arch" for @{$packs_arch{$arch} || []};
     }
 
-    my $cf = Build::read_config_dist($dist, $archs[0], $dist_configs);
+    my $cf = Build::read_config_dist($dist, $archpath, $dist_configs);
+    print Dumper($cf);
     $cf->{'warnings'} = 1;
 
     my $dofileprovides = %{$cf->{'fileprovides'}};
@@ -586,7 +587,7 @@ sub build_package {
             debug("Build directory exists");
             $incremental_opt = "--stage=\"-bp\"";
             $scratch = "$scratch_dir.incremental";
-            $buildcmd = "sudo BUILD_ROOT=$scratch BUILD_DIR=\"$build_dir\" $virtualenv/usr/bin/build --arch $archpath --uid $zuid:$zgid --jobs 4 $clean_option $incremental_opt --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename $redirect  ";
+            $buildcmd = "sudo BUILD_DIR=\"$build_dir\" $virtualenv/usr/bin/build --use-system-qemu --root $scratch --arch $archpath --uid $zuid:$zgid --jobs 4 $clean_option $incremental_opt --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename $redirect  ";
             system ($buildcmd);
         } else {
             info("Build directory does not exist");
@@ -598,7 +599,7 @@ sub build_package {
         if ($run_configure == 1 ) {
             $no_configure = "--define '%configure echo' --define '%autogen echo' --define '%reconfigure echo'";
         }
-        $buildcmd = "sudo BUILD_ROOT=$scratch BUILD_DIR=\"$build_dir\" $virtualenv/usr/bin/build $no_configure --no-topdir-cleanup --no-init --arch $archpath --uid $zuid:$zgid --jobs 4 $clean_option $incremental_opt --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename $redirect  ";
+        $buildcmd = "sudo BUILD_DIR=\"$build_dir\" $virtualenv/usr/bin/build $no_configure --no-topdir-cleanup --no-init --use-system-qemu --root $scratch --arch $archpath --uid $zuid:$zgid --jobs 4 $clean_option $incremental_opt --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename $redirect  ";
         system ($buildcmd);
         $mount = "sudo umount $scratch/home/abuild/rpmbuild/BUILD/$name-$version";
         system($mount);
@@ -611,7 +612,7 @@ sub build_package {
         exit(1);
     }
 
-    my $buildcmd = "sudo BUILD_ROOT=$scratch BUILD_DIR=\"$build_dir\" $virtualenv/usr/bin/build --arch $archpath --uid $zuid:$zgid --jobs 4 $clean_option $incremental_opt --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename $redirect  ";
+    my $buildcmd = "sudo BUILD_DIR=\"$build_dir\" $virtualenv/usr/bin/build --use-system-qemu --root $scratch --arch $archpath --uid $zuid:$zgid --jobs 4 $clean_option $incremental_opt --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename $redirect  ";
     debug("$buildcmd");
     if (system ($buildcmd) == 0 ) {
         system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";

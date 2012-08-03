@@ -136,6 +136,10 @@ Available options:
     --dist <Distribution>
       Build for the specificed distribution.
 
+    --path <path to sources>
+      Path to git repo tree, default is packages/ sub-directory
+      in the developer environment.
+
     --clean 
       clean the build environment before building a package.
 

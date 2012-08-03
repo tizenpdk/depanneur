@@ -88,7 +88,6 @@ my $incremental = 0;
 my $run_configure = 0;
 my $overwrite = 0;
 my $MAX_THREADS = 1;
-my $suffix = "";
 
 my @tobuild = ();
 my @tofind = ();
@@ -103,28 +102,83 @@ my @errors :shared;
 my $packages_built :shared  = 0;
 my %workers = ();
 
+
 GetOptions (
     "arch=s" => \$arch,
+    "dist=s" => \$dist,
     "clean" => \$clean,
     "clean-once" => \$cleanonce,
     "exclude=s" => \@exclude,
     "exclude-from-file=s" => \$exclude_from_file,
     "build-all" => \$buildall,
-    "dist=s" => \$dist,
     "binary=s" => \$binarylist,
     "style=s" => \$style,
     "path=s" => \$path,
     "dryrun" => \$dryrun,
     "help|?" => \$help,
     "keepgoing" => \$keepgoing,
-    "localrepo=s" => \$localrepo,
     "overwrite" => \$overwrite,
-    "suffix=s" => \$suffix,
     "debug" => \$debug,
     "incremental" => \$incremental,
     "no-configure" => \$run_configure,
     "threads=s" => \$MAX_THREADS,
     );
+
+if ( $help ) {
+    print "
+Depanneur is a package build tool based on the obs-build script.
+
+Available options:
+
+    --arch <Architecture>
+      Build for the specificed architecture.
+
+    --dist <Distribution>
+      Build for the specificed distribution.
+
+    --clean 
+      clean the build environment before building a package.
+
+    --clean-once
+      clean the build environment only once when you start 
+      building multiple packages, after that use existing 
+      environment for all packages.
+
+    --threads  [number of threads]
+      Build packages in parallel. This will start up to the 
+      specificed number of build jobs when there are more 
+      than 1 job in the queue.
+
+    --overwrite
+      Overwrite existing binaries.
+
+    --keepgoing 
+      If a package build fails, do not abort and continue
+      building other packages in the queue.
+
+    --incremental
+      Build a package from the local git tree directly.
+      This option does not produce packages now, it is very
+      helpful when debugging build failures and helps with
+      speeding up development.
+      This option options mounts the local tree in the build
+      environment and builds using sources in the git tree, 
+      if the build fails, changes can be done directly to the
+      source and build can continue from where it stopped.
+
+    --no-configure
+      This option disables running configure scripts and auto-
+      generation of auto-tools to make incremental build possible
+      It requires the configure scripts in the spec to be referreneced
+      using the %configure, %reconfigre and %autogen macros.
+
+    --debug
+      Debug output.
+
+";
+    exit(0);
+}
+
 
 my $Config = LoadFile($config_filename);
 my @package_repos = ();
@@ -415,7 +469,6 @@ sub expand_deps {
     }
 
     my $cf = Build::read_config_dist($dist, $archpath, $dist_configs);
-    print Dumper($cf);
     $cf->{'warnings'} = 1;
 
     my $dofileprovides = %{$cf->{'fileprovides'}};
@@ -634,7 +687,7 @@ sub build_package {
             system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log") == 0 or die "cp";
             print RED, "Build failed, Leaving the logs in $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log\n", RESET;
         }
-        push @errors, "$name-$dist-$arch$suffix";
+        push @errors, "$name-$dist-$arch";
         # Detach and terminate
         {
             lock($DETACHING);

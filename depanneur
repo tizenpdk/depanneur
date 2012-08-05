@@ -395,7 +395,8 @@ sub parse_packs {
     my %packs = ();
     foreach my $spec (@packs) {
         my $pack = Build::Rpm::parse($config, $spec);
-        if ( ( $pack->{'exclarch'} ) && ( ! grep $_ eq $arch, $pack->{'exclarch'} ) ) {
+        if ( ( $pack->{'exclarch'} ) &&  ( ! grep $_ eq $archs[0], @{$pack->{'exclarch'}} ) ) {
+            debug("arch not compatible");
             next;
         }
         my $name = $pack->{name};

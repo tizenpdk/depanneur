@@ -85,6 +85,7 @@ my $exclude_from_file = "$build_root/meta/exclude";
 my $cleanonce = 0;
 my $debug = 0;
 my $incremental = 0;
+my $turbu = 0;
 my $run_configure = 0;
 my $overwrite = 0;
 my $MAX_THREADS = 1;
@@ -120,6 +121,7 @@ GetOptions (
     "overwrite" => \$overwrite,
     "debug" => \$debug,
     "incremental" => \$incremental,
+    "turbu" => \$turbu,
     "no-configure" => \$run_configure,
     "threads=s" => \$MAX_THREADS,
     );
@@ -610,22 +612,34 @@ sub build_package {
         $srpm_filename = $to_build{$name}->{filename};
     }
 
+    my @args = ();
+    my @args_inc = ();
+    push @args, "sudo -E $virtualenv/usr/bin/build";
+    if ($arch ne "i586" ) {
+        push @args, "--use-system-qemu";
+    }
+    push @args, "--uid $zuid:$zgid";
+    push @args, "--jobs 4";
+    push @args, "--cachedir $cache_dir";
+    push @args, "--dist $dist";
+    push @args, "--configdir $dist_configs";
+    push @args, "--arch $archpath";
+    push @args, "$srpm_filename";
+
     # Rebuild the package.
     info("*** building $name-$version-$release $arch $dist (worker: $thread) ***");
 
     $ENV{'BUILD_DIR'} = $build_dir;
 
-    my $repos = "";
     if ( -d "$localrepo/$dist/$arch/RPMS" ) {
-        $repos .= "--rpms $localrepo/$dist/$arch/RPMS ";
+        push @args, "--rpms $localrepo/$dist/$arch/RPMS";
     }
     foreach my $r (@package_repos) {
-        $repos .= "--repository $r ";
+        push @args, "--repository $r";
     }
 
-    my $clean_option = "";
     if ( ($clean || $cleanonce ) && ( ! grep $_ == $thread, @cleaned) )  {
-       $clean_option = " --clean "; 
+       push @args, "--clean";
        if ($cleanonce) {
             push(@cleaned, $thread);
        }
@@ -636,28 +650,39 @@ sub build_package {
     if ($MAX_THREADS > 1 ) {
         $redirect = "> /dev/null 2>&1";
     }
-    my $incremental_opt = "";
+    @args_inc = @args;
+    my $cmd = "";
     if ($incremental == 1) {
         print "Doing incremental build\n";
         my $buildcmd = "";
         if ( ! -d "$scratch/home/abuild/rpmbuild/BUILD/$name-$version" ) {
             debug("Build directory exists");
-            $incremental_opt = "--stage=\"-bp\"";
             $scratch = "$scratch_dir.incremental";
-            $buildcmd = "sudo BUILD_DIR=\"$build_dir\" $virtualenv/usr/bin/build --use-system-qemu --root $scratch --arch $archpath --uid $zuid:$zgid --jobs 4 $clean_option $incremental_opt --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename $redirect  ";
-            system ($buildcmd);
+            push @args, "--stage=\"-bp\"";
+            push @args, "--root $scratch";
+            push @args, "--clean";
+            push @args, $redirect;
+            $cmd = join(" ", @args);
+            system ($cmd);
         } else {
             info("Build directory does not exist");
         }
         my $mount = "sudo mount -o bind $package_path $scratch/home/abuild/rpmbuild/BUILD/$name-$version";
         system($mount);
-        $incremental_opt = "--short-circuit --stage=\"-bc\"";
-        my $no_configure = "";
         if ($run_configure == 1 ) {
-            $no_configure = "--define '%configure echo' --define '%autogen echo' --define '%reconfigure echo'";
+            push @args_inc, "--define '%configure echo'";
+            push @args_inc, "--define '%reconfigure echo'";
+            push @args_inc, "--define '%autogen echo'";
         }
-        $buildcmd = "sudo BUILD_DIR=\"$build_dir\" $virtualenv/usr/bin/build $no_configure --no-topdir-cleanup --no-init --use-system-qemu --root $scratch --arch $archpath --uid $zuid:$zgid --jobs 4 $clean_option $incremental_opt --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename $redirect  ";
-        system ($buildcmd);
+        push @args_inc, "--stage=\"-bp\"";
+        push @args_inc, "--root $scratch";
+        push @args_inc, "--no-topdir-cleanup";
+        push @args_inc, "--no-init";
+        push @args_inc, "--short-circuit --stage=\"-bc\"";
+        push @args_inc, $redirect;
+        $cmd = join(" ", @args_inc);
+        system ($cmd);
+
         $mount = "sudo umount $scratch/home/abuild/rpmbuild/BUILD/$name-$version";
         system($mount);
         # Detach and terminate
@@ -667,11 +692,12 @@ sub build_package {
         }
         print GREEN, "finished incremental building $name\n", RESET;
         exit(1);
+    } else {
+        push @args, "--root $scratch";
     }
-
-    my $buildcmd = "sudo BUILD_DIR=\"$build_dir\" $virtualenv/usr/bin/build --use-system-qemu --root $scratch --arch $archpath --uid $zuid:$zgid --jobs 4 $clean_option $incremental_opt --cachedir $cache_dir --dist $dist --configdir $dist_configs $repos $srpm_filename $redirect  ";
-    debug("$buildcmd");
-    if (system ($buildcmd) == 0 ) {
+    
+    $cmd = join(" ", @args);
+    if (system ($cmd) == 0 ) {
         system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";
         system ("cp $scratch/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS") == 0 or die "mv";
         mkdir_p "$localrepo/$dist/$arch/logs/success/$name-$version-$release";
@@ -820,24 +846,26 @@ if ( ! -e "$localrepo/$dist/$arch/RPMS" ) {
 
 while (! $TERM) {
     my @order = ();
-    my $repos_setup = 1;
-    system("> $order_dir/.repo.cache");
-    if ( system("$build_dir/createrpmdeps $localrepo/$dist/$arch/RPMS >> $order_dir/.repo.cache ") != 0 ) {
-        $repos_setup = 0;
-    }
-    system("echo D: >> $order_dir/.repo.cache");
-    foreach my $repo (@package_repos) {
-        my $cmd = "$build_dir/createrepomddeps --cachedir=$order_dir $repo >> $order_dir/.repo.cache ";
-        debug($cmd);
-        if ( system($cmd) == 0 ) {
-            system("echo D: >> $order_dir/.repo.cache");
-        } else {
+    if (! $turbu) {
+        my $repos_setup = 1;
+        system("> $order_dir/.repo.cache");
+        if ( system("$build_dir/createrpmdeps $localrepo/$dist/$arch/RPMS >> $order_dir/.repo.cache ") != 0 ) {
             $repos_setup = 0;
         }
-    }
-    if ($repos_setup == 0 ) {
-        print "repo cache creation failed...\n";
-        exit(1);
+        system("echo D: >> $order_dir/.repo.cache");
+        foreach my $repo (@package_repos) {
+            my $cmd = "$build_dir/createrepomddeps --cachedir=$order_dir $repo >> $order_dir/.repo.cache ";
+            debug($cmd);
+            if ( system($cmd) == 0 ) {
+                system("echo D: >> $order_dir/.repo.cache");
+            } else {
+                $repos_setup = 0;
+            }
+        }
+        if ($repos_setup == 0 ) {
+            print "repo cache creation failed...\n";
+            exit(1);
+        }
     }
     foreach my $name (keys %to_build) {
         if( ! (grep $_ eq $name, @done) && ! (grep $_ eq $name, @exclude)) {

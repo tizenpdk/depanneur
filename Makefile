@@ -14,5 +14,6 @@ install:
 	    $(DESTDIR)$(bindir)
 	install -m755 \
 	    depanneur  \
+		build_wrapper \
 	    $(DESTDIR)$(bindir)
 

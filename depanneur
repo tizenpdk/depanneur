@@ -187,6 +187,10 @@ Available options:
 
 
 my $Config = LoadFile($config_filename);
+if (!$Config) { 
+    print "Error while parsing $config_filename";
+    exit(1);
+}
 my @package_repos = ();
 foreach my $r (@{$Config->{Repositories}}) {
     my $uri = URI->new($r->{Url});

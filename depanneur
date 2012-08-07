@@ -542,10 +542,10 @@ sub createrepo
 {
     my $arch = shift;
     my $dist = shift;
-
     mkdir_p "$localrepo/$dist/src/SRPMS";
     system ("cd $localrepo/$dist/src && rm -rf repodata && createrepo --changelog-limit=0 -q . > /dev/null 2>&1 ") == 0 or die "createrepo failed: $?\n";
     mkdir_p "$localrepo/$dist/$arch/RPMS";
+    system("touch $localrepo/$dist/$arch/RPMS");
     
     my $groups = "";
     if ( -e $groupfile ) {
@@ -698,6 +698,7 @@ sub build_package {
     }
     
     $cmd = join(" ", @args);
+    debug($cmd);
     if (system ($cmd) == 0 ) {
         system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";
         system ("cp $scratch/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS") == 0 or die "mv";
@@ -968,6 +969,7 @@ while (! $TERM) {
 }
 
 if ($packages_built) {
+    info("Updating local repo");
     createrepo ($arch, $dist);
 }
 

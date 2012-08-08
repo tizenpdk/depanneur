@@ -1,5 +1,7 @@
 #!/usr/bin/perl 
-#
+# 
+# Copyright Intel Corp. 2012
+# Author: Anas Nashif <anas.nashif@intel.com>
 BEGIN {
   my ($wd) = $0 =~ m-(.*)/- ;
   $wd ||= '.';
@@ -923,7 +925,7 @@ while (! $TERM) {
                         my $so = source_of($depp, %to_build);
                         if (defined($so) && $name ne $so
                             && (! grep($_ eq $so, @skipped)) && (! grep($_ eq $so, @done))) {
-                            print "not adding $name, since it depends on $so\n";
+                            print "Not adding $name, since it depends on $so (cycle?)\n";
                             $add = 0;
                             last;
                         }

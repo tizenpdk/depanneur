@@ -133,10 +133,10 @@ Depanneur is a package build tool based on the obs-build script.
 Available options:
 
     --arch <Architecture>
-      Build for the specificed architecture.
+      Build for the specified architecture.
 
     --dist <Distribution>
-      Build for the specificed distribution.
+      Build for the specified distribution.
 
     --path <path to sources>
       Path to git repo tree, default is packages/ sub-directory
@@ -152,7 +152,7 @@ Available options:
 
     --threads  [number of threads]
       Build packages in parallel. This will start up to the 
-      specificed number of build jobs when there are more 
+      specified number of build jobs when there are more 
       than 1 job in the queue.
 
     --overwrite
@@ -175,7 +175,7 @@ Available options:
     --no-configure
       This option disables running configure scripts and auto-
       generation of auto-tools to make incremental build possible
-      It requires the configure scripts in the spec to be referreneced
+      It requires the configure scripts in the spec to be refereneced
       using the %configure, %reconfigre and %autogen macros.
 
     --debug

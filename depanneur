@@ -649,7 +649,7 @@ sub build_package {
     $ENV{'BUILD_DIR'} = $build_dir;
 
     if ( -d "$localrepo/$dist/$arch/RPMS" ) {
-        push @args, "--rpms $localrepo/$dist/$arch/RPMS";
+        push @args, "--repository $localrepo/$dist/$arch/RPMS";
     }
     foreach my $r (@package_repos) {
         push @args, "--repository $r";

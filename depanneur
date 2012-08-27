@@ -59,6 +59,7 @@ use File::Basename;
 
 my @threads;
 my @exclude = ();
+my @repos= ();
 my $arch = "i586";
 my $path = "";
 my $style = "git";
@@ -105,6 +106,7 @@ my %workers = ();
 
 
 GetOptions (
+    "repository=s" => \@repos,
     "arch=s" => \$arch,
     "dist=s" => \$dist,
     "clean" => \$clean,
@@ -186,19 +188,29 @@ Available options:
 }
 
 
-my $Config = LoadFile($config_filename);
-if (!$Config) { 
-    print "Error while parsing $config_filename";
-    exit(1);
-}
 my @package_repos = ();
-foreach my $r (@{$Config->{Repositories}}) {
-    my $uri = URI->new($r->{Url});
-    if ( $r->{Password} && $r->{Username} ) {
-        $uri->userinfo($r->{Username} . ":" . $r->{Password});
+my $Config;
+if (-e $config_filename) {
+    $Config = LoadFile($config_filename);
+    if (!$Config) {
+        print "Error while parsing $config_filename";
+        exit(1);
     }
-    if ($uri->scheme ne "file") {
-        push(@package_repos, $uri);
+}
+
+if (@repos) {
+    @package_repos = @repos;
+} else {
+    if ($Config){
+        foreach my $r (@{$Config->{Repositories}}) {
+            my $uri = URI->new($r->{Url});
+            if ( $r->{Password} && $r->{Username} ) {
+                $uri->userinfo($r->{Username} . ":" . $r->{Password});
+            }
+            if ($uri->scheme ne "file") {
+                push(@package_repos, $uri);
+            }
+        }
     }
 }
 

@@ -109,6 +109,7 @@ GetOptions (
     "repository=s" => \@repos,
     "arch=s" => \$arch,
     "dist=s" => \$dist,
+    "configdir=s" => \$dist_configs,
     "clean" => \$clean,
     "clean-once" => \$cleanonce,
     "exclude=s" => \@exclude,

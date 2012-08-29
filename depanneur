@@ -771,6 +771,26 @@ foreach my $sp (@original_specs) {
 }
 
 print "Parsing package data...\n";
+
+if (! $turbu) {
+    print "Retrieving repo metadata...\n";
+    my $repos_setup = 1;
+    system("> $order_dir/.repo.cache");
+    foreach my $repo (@package_repos) {
+        my $cmd = "$build_dir/createrepomddeps --cachedir=$order_dir $repo >> $order_dir/.repo.cache ";
+        debug($cmd);
+        if ( system($cmd) == 0 ) {
+            system("echo D: >> $order_dir/.repo.cache");
+        } else {
+            $repos_setup = 0;
+        }
+    }
+    if ($repos_setup == 0 ) {
+        print "repo cache creation failed...\n";
+        exit(1);
+    }
+}
+
 my %packs = parse_packs($config, @packs);
 
 if ($binarylist ne "" && -e $binarylist ) {
@@ -863,44 +883,25 @@ if ( ! -e "$localrepo/$dist/$arch/RPMS" ) {
     createrepo ($arch, $dist);
 }
 
+foreach my $name (keys %to_build) {
+    if( ! (grep $_ eq $name, @done) && ! (grep $_ eq $name, @exclude)) {
+        my $fn = $to_build{$name}->{filename};
+        my $version = $to_build{$name}->{version};
+        my $release = $to_build{$name}->{release};
+        my $pattern = "$localrepo/$dist/src/SRPMS/$name-$version-$release.*.rpm";
+        my @binaries = glob $pattern;
+        if (@binaries != 0 && ! $overwrite) {
+            info("skipping $name-$version-$release $arch ");
+            push(@skipped, $name);
+        } elsif (@binaries != 0 && $overwrite) {
+            print "*** overwriting $name-$version-$release $arch ***\n";
+        }
+    }
+}
+
+
 while (! $TERM) {
     my @order = ();
-    if (! $turbu) {
-        my $repos_setup = 1;
-        system("> $order_dir/.repo.cache");
-        if ( system("$build_dir/createrpmdeps $localrepo/$dist/$arch/RPMS >> $order_dir/.repo.cache ") != 0 ) {
-            $repos_setup = 0;
-        }
-        system("echo D: >> $order_dir/.repo.cache");
-        foreach my $repo (@package_repos) {
-            my $cmd = "$build_dir/createrepomddeps --cachedir=$order_dir $repo >> $order_dir/.repo.cache ";
-            debug($cmd);
-            if ( system($cmd) == 0 ) {
-                system("echo D: >> $order_dir/.repo.cache");
-            } else {
-                $repos_setup = 0;
-            }
-        }
-        if ($repos_setup == 0 ) {
-            print "repo cache creation failed...\n";
-            exit(1);
-        }
-    }
-    foreach my $name (keys %to_build) {
-        if( ! (grep $_ eq $name, @done) && ! (grep $_ eq $name, @exclude)) {
-            my $fn = $to_build{$name}->{filename};
-            my $version = $to_build{$name}->{version};
-            my $release = $to_build{$name}->{release};
-            my $pattern = "$localrepo/$dist/src/SRPMS/$name-$version-$release.*.rpm";
-            my @binaries = glob $pattern;
-            if (@binaries != 0 && ! $overwrite) {
-                info("skipping $name-$version-$release $arch $dist");
-                push(@skipped, $name);
-            } elsif (@binaries != 0 && $overwrite) {
-                print "*** overwriting $name-$version-$release $arch $dist ***\n";
-            }
-        }
-    }
     my @o = ();
     #foreach my $name (keys %to_build) {
     #    push(@o,$name);

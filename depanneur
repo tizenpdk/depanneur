@@ -188,14 +188,35 @@ Available options:
     exit(0);
 }
 
+sub debug {
+    my $msg = shift;
+    $msg =~ s#://[^@]*@#://#g;
+    print YELLOW, "debug: $msg\n", RESET if $debug == 1;
+}
+
+sub info {
+    my $msg = shift;
+    print GREEN, "info: ", RESET, "$msg\n";
+}
+
+sub warning {
+    my $msg = shift;
+    print YELLOW, "warning: ", RESET, "$msg\n";
+}
+
+sub error {
+    my $msg = shift;
+    print RED, "error: ", RESET, "$msg\n";
+    exit 1;
+}
+
 
 my @package_repos = ();
 my $Config;
 if (-e $config_filename) {
     $Config = LoadFile($config_filename);
     if (!$Config) {
-        print "Error while parsing $config_filename";
-        exit(1);
+        error("Error while parsing $config_filename");
     }
 }
 
@@ -234,18 +255,6 @@ sub mkdir_p($) {
         print STDERR "$err_msg";
     }
 } 
-
-sub debug {
-    my $msg = shift;
-    $msg =~ s#://[^@]*@#://#g;
-    print YELLOW, "DEBUG: $msg\n", RESET if $debug == 1;
-}
-
-sub info {
-    my $msg = shift;
-    print GREEN, "$msg\n", RESET;
-}
-
 
 if ( $exclude_from_file ne "" && -e $exclude_from_file ) {
     debug("using $exclude_from_file for package exclusion");
@@ -671,7 +680,7 @@ sub build_package {
     @args_inc = @args;
     my $cmd = "";
     if ($incremental == 1) {
-        print "Doing incremental build\n";
+        info("Doing incremental build");
         my $buildcmd = "";
         if ( ! -d "$scratch/home/abuild/rpmbuild/BUILD/$name-$version" ) {
             debug("Build directory exists");
@@ -708,7 +717,7 @@ sub build_package {
             lock($DETACHING);
             threads->detach() if ! threads->is_detached();
         }
-        print GREEN, "finished incremental building $name\n", RESET;
+        info("finished incremental building $name");
         exit(1);
     } else {
         push @args, "--root $scratch";
@@ -727,14 +736,14 @@ sub build_package {
             lock($DETACHING);
             threads->detach() if ! threads->is_detached();
         }
-        print GREEN, "finished building $name\n", RESET;
+        info("finished building $name");
         $packages_built = 1;
         return(0);
     } else {
         mkdir_p "$localrepo/$dist/$arch/logs/fail/$name-$version-$release";
         if ( -f "$scratch/.build.log" ) {
             system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log") == 0 or die "cp";
-            print RED, "Build failed, Leaving the logs in $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log\n", RESET;
+            warning("Build failed, Leaving the logs in $localrepo/$arch/logs/fail/$name-$version-$release/log");
         }
         push @errors, "$name-$dist-$arch";
         # Detach and terminate
@@ -750,7 +759,7 @@ sub build_package {
 
 
 # MAIN
-print "Start building packages from: " . $package_path . " ($style)\n";
+info("Start building packages from: " . $package_path . " ($style)");
 
 if ($buildall || @packs == 0 ) {
     if ($style eq "git") {
@@ -760,20 +769,19 @@ if ($buildall || @packs == 0 ) {
     }
 } else {
     if (@packs == 0 && $path eq "") {
-        print "Please provide a list of packages to build.";
-        exit 1;
+        error("Please provide a list of packages to build.");
     }
 }
 
-print "Prepare sources...\n";
+info("Prepare sources...");
 foreach my $sp (@original_specs) {
     prepare_git($config, $sp);
 }
 
-print "Parsing package data...\n";
+info("Parsing package data...");
 
 if (! $turbu) {
-    print "Retrieving repo metadata...\n";
+    info("Retrieving repo metadata...");
     my $repos_setup = 1;
     system("> $order_dir/.repo.cache");
     foreach my $repo (@package_repos) {
@@ -786,8 +794,7 @@ if (! $turbu) {
         }
     }
     if ($repos_setup == 0 ) {
-        print "repo cache creation failed...\n";
-        exit(1);
+        error("repo cache creation failed...");
     }
 }
 
@@ -855,7 +862,7 @@ if ($binarylist ne "" && -e $binarylist ) {
 
     %hash = map { $_, 1 } @tobuild;
     @tobuild = keys %hash;
-    print "Initial set:\n";
+    info ("Initial set:");
     foreach my $p (@tobuild) {
         print " $p, ";
     }
@@ -866,8 +873,7 @@ if ($binarylist ne "" && -e $binarylist ) {
     }
     %to_build = parse_packs($config, @final);
 } elsif ( $binarylist ne "") {
-    print STDERR "Cant find binary list for image\n";
-    exit 1;
+    error("Cant find binary list for image");
 } else {
     %to_build = %packs
 }
@@ -879,7 +885,7 @@ for(my $w = 0; $w < $MAX_THREADS; $w++) {
 }
 
 if ( ! -e "$localrepo/$dist/$arch/RPMS" ) {
-    print "Creating repo...";
+    info("Creating repo...");
     createrepo ($arch, $dist);
 }
 
@@ -894,7 +900,7 @@ foreach my $name (keys %to_build) {
             info("skipping $name-$version-$release $arch ");
             push(@skipped, $name);
         } elsif (@binaries != 0 && $overwrite) {
-            print "*** overwriting $name-$version-$release $arch ***\n";
+            info("*** overwriting $name-$version-$release $arch ***");
         }
     }
 }
@@ -937,7 +943,7 @@ while (! $TERM) {
                         my $so = source_of($depp, %to_build);
                         if (defined($so) && $name ne $so
                             && (! grep($_ eq $so, @skipped)) && (! grep($_ eq $so, @done))) {
-                            print "not adding $name, since it depends on $so\n";
+                            debug("not adding $name, since it depends on $so");
                             $add = 0;
                             last;
                         }
@@ -954,7 +960,7 @@ while (! $TERM) {
         last;
     } else {
         push(@done, @order);
-        print "Next pass:\n";
+        info("Next pass:");
         foreach my $o (@order) {
             print $o . "\n";
         }
@@ -992,8 +998,8 @@ if ($packages_built) {
 }
 
 if (@errors) {
-    print "\n\n\nBuild failed for the following packages:\n";
-    print "  $_\n" foreach @errors;
+    info("\n\n\nBuild failed for the following packages:");
+    info("  $_") foreach @errors;
     exit 1
 }
 

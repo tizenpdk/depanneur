@@ -809,7 +809,7 @@ if (! $turbo) {
     my $repos_setup = 1;
     system("> $order_dir/.repo.cache");
     foreach my $repo (@package_repos) {
-        my $cmd = "$build_dir/createrepomddeps --cachedir=$order_dir $repo >> $order_dir/.repo.cache ";
+        my $cmd = "$build_dir/createrepomddeps --cachedir=$cache_dir $repo >> $order_dir/.repo.cache ";
         debug($cmd);
         if ( system($cmd) == 0 ) {
             system("echo D: >> $order_dir/.repo.cache");

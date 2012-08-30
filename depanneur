@@ -788,6 +788,9 @@ if ($buildall || @packs == 0 ) {
         if (@original_specs > 1 && ! $commit eq ""){
             error("--commit option can't be specified with multiple packages");
         }
+        if (@original_specs == 0) {
+            error("No source package found at $path");
+        }
     } elsif ($style eq "obs") {
         File::Find::find({wanted => \&obs_wanted}, $package_path );
     }

@@ -88,7 +88,6 @@ my $exclude_from_file = "$build_root/meta/exclude";
 my $cleanonce = 0;
 my $debug = 0;
 my $incremental = 0;
-my $turbo = 0;
 my $run_configure = 0;
 my $overwrite = 0;
 my $MAX_THREADS = 1;
@@ -128,7 +127,6 @@ GetOptions (
     "overwrite" => \$overwrite,
     "debug" => \$debug,
     "incremental" => \$incremental,
-    "turbo" => \$turbo,
     "no-configure" => \$run_configure,
     "threads=s" => \$MAX_THREADS,
     );
@@ -805,26 +803,25 @@ foreach my $sp (@original_specs) {
     prepare_git($config, $sp);
 }
 
-info("Parsing package data...");
 
-if (! $turbo) {
-    info("Retrieving repo metadata...");
-    my $repos_setup = 1;
-    system("> $order_dir/.repo.cache");
-    foreach my $repo (@package_repos) {
-        my $cmd = "$build_dir/createrepomddeps --cachedir=$cache_dir $repo >> $order_dir/.repo.cache ";
-        debug($cmd);
-        if ( system($cmd) == 0 ) {
-            system("echo D: >> $order_dir/.repo.cache");
-        } else {
-            $repos_setup = 0;
-        }
-    }
-    if ($repos_setup == 0 ) {
-        error("repo cache creation failed...");
+info("Retrieving repo metadata...");
+my $repos_setup = 1;
+
+system("> $order_dir/.repo.cache");
+foreach my $repo (@package_repos) {
+    my $cmd = "$build_dir/createrepomddeps --cachedir=$cache_dir $repo >> $order_dir/.repo.cache ";
+    debug($cmd);
+    if ( system($cmd) == 0 ) {
+        system("echo D: >> $order_dir/.repo.cache");
+    } else {
+        $repos_setup = 0;
     }
 }
+if ($repos_setup == 0 ) {
+    error("repo cache creation failed...");
+}
 
+info("Parsing package data...");
 my %packs = parse_packs($config, @packs);
 
 if ($binarylist ne "" && -e $binarylist ) {

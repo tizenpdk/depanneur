@@ -740,6 +740,7 @@ sub build_package {
         exit(0);
     } else {
         push @args, "--root $scratch";
+        push @args, "--clean" if (-e "$scratch/not-ready");
     }
     
     $cmd = join(" ", @args);

@@ -97,7 +97,8 @@ my @tobuild = ();
 my @tofind = ();
 my @final = ();
 my %to_build = ();
-my @done = ();
+my @running :shared = ();
+my @done :shared = ();
 my @skipped = ();
 my @original_specs = ();
 
@@ -765,6 +766,8 @@ sub build_package {
         {
             lock($DETACHING);
             threads->detach() if ! threads->is_detached();
+            @running = grep { $_ ne "$name"} @running;
+            push(@done, $name);
         }
         info("finished building $name");
         $packages_built = 1;
@@ -775,11 +778,13 @@ sub build_package {
             system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log") == 0 or die "cp";
             warning("Build failed, Leaving the logs in $localrepo/$arch/logs/fail/$name-$version-$release/log");
         }
-        push @errors, "$name-$dist-$arch";
         # Detach and terminate
         {
             lock($DETACHING);
             threads->detach() if ! threads->is_detached();
+            @running = grep { $_ ne "$name"} @running;
+            push(@done, $name);
+            push @errors, "$name-$dist-$arch";
         }
         return 1;
     }
@@ -952,7 +957,8 @@ while (! $TERM) {
     #print " " . $_ . "\n" foreach (@o);
     foreach my $name (keys %to_build) {
         if( ! (grep $_ eq $name, @done) && 
-            ! (grep $_ eq $name, @skipped)) 
+            ! (grep $_ eq $name, @skipped) &&
+            ! (grep $_ eq $name, @running))
         {
             my $fn = $to_build{$name}->{filename};
             my $version = $to_build{$name}->{version};
@@ -988,10 +994,14 @@ while (! $TERM) {
             } 
         }
     }
-    if (@order == 0) {
+
+    if (scalar(keys %to_build) == @done + @skipped) {
         last;
+    } elsif (@order == 0) {
+        # Waiting thread workers done, then re-calculate ready packages
+        sleep(1);
+        next;
     } else {
-        push(@done, @order);
         info("Next pass:");
         foreach my $o (@order) {
             print $o . "\n";
@@ -1003,25 +1013,31 @@ while (! $TERM) {
 
     while (@order && ! $TERM) {
         # Keep max threads running
-        for (my $needed = $MAX_THREADS - threads->list(); 
-            $needed && ! $TERM; $needed--) {
+        my $needed = $MAX_THREADS - threads->list();
 
+        if ($needed == 0) {
+            # Waiting for build threads finish
+            sleep(1);
+            next;
+        }
+
+        for (; $needed && ! $TERM; $needed--) {
             my $job = shift(@order);
             last if (! $job);
-
 
             my $worker = find_idle();
             my $thr = threads->create('build_package',$job, $worker);
             my $tid = $thr->tid();
+            push (@running, $job);
             set_busy($worker, $tid);
         }
     }
 
-    while ((threads->list() > 0)) {
-        # waiting for threads to finish
-        sleep(1);
-    }
+}
 
+# waiting for threads to finish
+while ((threads->list() > 0)) {
+    sleep(1);
 }
 
 if ($packages_built) {

@@ -452,6 +452,9 @@ sub parse_packs {
         my $release = $pack->{release};
         my @buildrequires = $pack->{deps};
         my @subpacks = $pack->{subpacks};
+        if ( (grep $_ eq $name, @exclude) ) {
+            next;
+        }
         $packs{$name} = {
             name => $name,
             version => $version,
@@ -922,18 +925,16 @@ if ( ! -e "$localrepo/$dist/$arch/RPMS" ) {
 }
 
 foreach my $name (keys %to_build) {
-    if( ! (grep $_ eq $name, @done) && ! (grep $_ eq $name, @exclude)) {
-        my $fn = $to_build{$name}->{filename};
-        my $version = $to_build{$name}->{version};
-        my $release = $to_build{$name}->{release};
-        my $pattern = "$localrepo/$dist/src/SRPMS/$name-$version-$release.*.rpm";
-        my @binaries = glob $pattern;
-        if (@binaries != 0 && ! $overwrite) {
-            info("skipping $name-$version-$release $arch ");
-            push(@skipped, $name);
-        } elsif (@binaries != 0 && $overwrite) {
-            info("*** overwriting $name-$version-$release $arch ***");
-        }
+    my $fn = $to_build{$name}->{filename};
+    my $version = $to_build{$name}->{version};
+    my $release = $to_build{$name}->{release};
+    my $pattern = "$localrepo/$dist/src/SRPMS/$name-$version-$release.*.rpm";
+    my @binaries = glob $pattern;
+    if (@binaries != 0 && ! $overwrite) {
+        info("skipping $name-$version-$release $arch ");
+        push(@skipped, $name);
+    } elsif (@binaries != 0 && $overwrite) {
+        info("*** overwriting $name-$version-$release $arch ***");
     }
 }
 
@@ -951,7 +952,6 @@ while (! $TERM) {
     #print " " . $_ . "\n" foreach (@o);
     foreach my $name (keys %to_build) {
         if( ! (grep $_ eq $name, @done) && 
-            ! (grep $_ eq $name, @exclude) && 
             ! (grep $_ eq $name, @skipped)) 
         {
             my $fn = $to_build{$name}->{filename};

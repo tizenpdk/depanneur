@@ -429,7 +429,8 @@ sub prepare_git {
         if ( system($cmd) == 0 ) {
             push(@packs, "$pkg_path/$pkg_name-$pkg_version-$pkg_release/$spec_file");
         } else {
-            debug("$name was not exported correctly");
+            unlink "$cache_path/$pkg_name-$pkg_version-$pkg_release";
+            debug("$pkg_name was not exported correctly");
         }
     }
 }

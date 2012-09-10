@@ -91,6 +91,7 @@ my $incremental = 0;
 my $run_configure = 0;
 my $overwrite = 0;
 my $MAX_THREADS = 1;
+my $extra_packs = "";
 
 my @tobuild = ();
 my @tofind = ();
@@ -129,6 +130,7 @@ GetOptions (
     "incremental" => \$incremental,
     "no-configure" => \$run_configure,
     "threads=s" => \$MAX_THREADS,
+    "extra-packs=s" => \$extra_packs,
     );
 
 if ( $help ) {
@@ -672,6 +674,10 @@ sub build_package {
     push @args, "--configdir $dist_configs";
     push @args, "--arch $archpath";
     push @args, "$srpm_filename";
+    if (! $extra_packs eq "") {
+        my $packs = join(' ', split(',', $extra_packs));
+        push @args, "--extra-packs=\"$packs\"";
+    }
 
     # Rebuild the package.
     info("*** building $name-$version-$release $arch $dist (worker: $thread) ***");

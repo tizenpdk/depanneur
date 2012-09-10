@@ -609,7 +609,7 @@ sub createrepo
 
 sub find_idle {
     my $idle = -1;
-    foreach my $w (keys %workers) {
+    foreach my $w (sort keys %workers) {
         my $tid = $workers{$w}->{tid};
         my $state = $workers{$w}->{state};
         if (! defined(threads->object($tid))) {
@@ -618,7 +618,7 @@ sub find_idle {
             last;
         }
     }
-    foreach my $w (keys %workers) {
+    foreach my $w (sort keys %workers) {
         if ( $workers{$w}->{state} eq 'idle' ) {
             $idle = $w;
             last;

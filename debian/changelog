@@ -1,0 +1,9 @@
+depanneur (0.1) unstable; urgency=high
+
+  * first version of depanneur, including the following features:
+    * dependency build wit correct dependendcy order
+    * parallel build with customized threads pool
+    * full build to specify a top dir of all packages tree
+    * support generate local repo once build finished
+
+ -- Qiang Zhang <qiang.z.zhang@intel.com>  Tue, 11 Sep 2012 10:56:15 +0800

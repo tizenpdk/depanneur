@@ -28,6 +28,9 @@ my $TERM:shared=0;
 # Prevents double detach attempts
 my $DETACHING:shared;
 
+# Flag to inform main thread update pkgdeps
+my $dirty:shared=0;
+
 # Signal handling
 $SIG{'INT'} = $SIG{'TERM'} = sub {
         print("^C captured\n");
@@ -98,6 +101,7 @@ my @tobuild = ();
 my @tofind = ();
 my @final = ();
 my %to_build = ();
+my %pkgdeps = ();
 my @running :shared = ();
 my @done :shared = ();
 my @skipped = ();
@@ -105,6 +109,7 @@ my @original_specs = ();
 
 my @cleaned : shared = ();
 my @errors :shared;
+my @expansion_errors = ();
 my $packages_built :shared  = 0;
 my %workers = ();
 
@@ -656,6 +661,34 @@ sub source_of {
     return undef;
 }
 
+sub update_pkgdeps()
+{
+    @expansion_errors = ();
+    foreach my $name (keys %to_build) {
+        if(! (grep $_ eq $name, @skipped)) {
+            my $fn = $to_build{$name}->{filename};
+            debug("Checking dependencies for $name");
+            my @bdeps = expand_deps($fn);
+            if (!shift @bdeps ) {
+                debug("expansion error");
+                debug("  $_") for @bdeps;
+                push @expansion_errors, $name;
+                next;
+            }
+            my @deps;
+            foreach my $depp (@bdeps) {
+                my $so = source_of($depp, %to_build);
+                if (defined($so) && $name ne $so
+                    && (! grep($_ eq $so, @skipped))
+                    && (! grep($_ eq $so, @deps))) {
+                    push (@deps, $so);
+                }
+            }
+            $pkgdeps{$name} = [@deps];
+        }
+    }
+}
+
 sub build_package {
     my ($name, $thread) = @_;
     use vars qw(@package_repos);
@@ -768,10 +801,14 @@ sub build_package {
         system ("cp $scratch/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS") == 0 or die "mv";
         mkdir_p "$localrepo/$dist/$arch/logs/success/$name-$version-$release";
         system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/success/$name-$version-$release/log") == 0 or die "mv";
-        system ("cp $scratch/.srcfiles.cache $order_dir/.repo.cache") == 0 or die "mv";
         # Detach and terminate
         {
             lock($DETACHING);
+            system("$build_dir/createrpmdeps $localrepo/$dist/$arch/RPMS > $order_dir/.repo.cache.local ");
+            system("echo D: >> $order_dir/.repo.cache.local");
+            # Merge local repo catch and remote repo cache
+            system("cat $order_dir/.repo.cache.local $order_dir/.repo.cache.remote >$order_dir/.repo.cache");
+            $dirty = 1;
             threads->detach() if ! threads->is_detached();
             @running = grep { $_ ne "$name"} @running;
             push(@done, $name);
@@ -840,6 +877,10 @@ foreach my $repo (@package_repos) {
         $repos_setup = 0;
     }
 }
+
+# Save .repo.cache as remote repo cache
+system("cp $order_dir/.repo.cache $order_dir/.repo.cache.remote");
+
 if ($repos_setup == 0 ) {
     error("repo cache creation failed...");
 }
@@ -950,61 +991,45 @@ foreach my $name (keys %to_build) {
     }
 }
 
+# Create & Update package dependency
+update_pkgdeps();
 
 while (! $TERM) {
     my @order = ();
     my @o = ();
-    #foreach my $name (keys %to_build) {
-    #    push(@o,$name);
-    #}
-    #print "Before order\n";
-    #print " " . $_ . "\n" foreach (@o);
-    #@o=Build::order($config, @o);
-    #print "After order\n";
-    #print " " . $_ . "\n" foreach (@o);
+
+    if ($dirty) {
+        update_pkgdeps();
+        $dirty = 0;
+    }
+
     foreach my $name (keys %to_build) {
         if( ! (grep $_ eq $name, @done) && 
             ! (grep $_ eq $name, @skipped) &&
             ! (grep $_ eq $name, @running))
         {
-            my $fn = $to_build{$name}->{filename};
-            my $version = $to_build{$name}->{version};
-            my $release = $to_build{$name}->{release};
-            my $pattern = "$localrepo/$dist/src/SRPMS/$name-$version-$release.*.rpm";
-            my @binaries = glob $pattern;
-            if (@binaries == 0 || $overwrite) {
-                debug("Checking dependencies for $name");
-                my $dd = "";
-                if ( $debug ) {
-                    $dd = "--debug";
+            next if (! exists $pkgdeps{$name});
+            my @bdeps = @{$pkgdeps{$name}};
+            my $add = 1;
+            foreach my $depp (@bdeps) {
+                if ((! grep($_ eq $depp, @skipped)) &&
+                    (! grep($_ eq $depp, @done))) {
+                    debug("not adding $name, since it depends on $depp");
+                    $add = 0;
+                    last;
                 }
-                my @bdeps = expand_deps($fn);
-                if (!shift @bdeps ) {
-                    debug("expansion error");
-                    debug("  $_") for @bdeps;
-                } else {
-                    my $add = 1;
-                    foreach my $depp (@bdeps) {
-                        my $so = source_of($depp, %to_build);
-                        if (defined($so) && $name ne $so
-                            && (! grep($_ eq $so, @skipped)) && (! grep($_ eq $so, @done))) {
-                            debug("not adding $name, since it depends on $so");
-                            $add = 0;
-                            last;
-                        }
-                    }
-                    if ($add == 1 ) {
-                        push(@order, $name);
-                    }
-                }
-
-            } 
+            }
+            if ($add == 1 ) {
+                push(@order, $name);
+            }
         }
     }
 
-    if (scalar(keys %to_build) == @done + @skipped) {
+    if (scalar(keys %to_build) == @done + @skipped + @expansion_errors && !$dirty) {
         last;
-    } elsif (@order == 0) {
+    }
+
+    if (@order == 0) {
         # Waiting thread workers done, then re-calculate ready packages
         sleep(1);
         next;
@@ -1052,10 +1077,16 @@ if ($packages_built) {
     createrepo ($arch, $dist);
 }
 
-if (@errors) {
-    info("\n\n\nBuild failed for the following packages:");
-    info("  $_") foreach @errors;
-    exit 1
+if (@errors || @expansion_errors) {
+    my $error_pkgs;
+    if (@errors) {
+        $error_pkgs = join("\n", @errors);
+        warning("The following packages build failed with rpmbuild issue:\n$error_pkgs");
+    }
+    if (@expansion_errors) {
+        $error_pkgs = join("\n", @expansion_errors);
+        warning("The following packages build failed with missing depends packages:\n$error_pkgs");
+    }
 }
 
 exit 0

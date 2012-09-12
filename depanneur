@@ -820,7 +820,7 @@ sub build_package {
         mkdir_p "$localrepo/$dist/$arch/logs/fail/$name-$version-$release";
         if ( -f "$scratch/.build.log" ) {
             system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log") == 0 or die "cp";
-            warning("Build failed, Leaving the logs in $localrepo/$arch/logs/fail/$name-$version-$release/log");
+            warning("Build failed, Leaving the logs in $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log");
         }
         # Detach and terminate
         {

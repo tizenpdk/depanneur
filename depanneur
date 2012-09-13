@@ -706,6 +706,10 @@ sub build_package {
 
     my @args = ();
     my @args_inc = ();
+    {
+        lock ($DETACHING);
+        system("sudo -v");
+    }
     push @args, "sudo -E $virtualenv/usr/bin/build";
     if ($arch ne "i586" ) {
         push @args, "--use-system-qemu";

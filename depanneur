@@ -756,7 +756,9 @@ sub build_package {
     if ($incremental == 1) {
         info("Doing incremental build");
         my $buildcmd = "";
-        if ( ! -d "$scratch/home/abuild/rpmbuild/BUILD/$name-$version" ) {
+        if ( -d "$scratch_dir.incremental/home/abuild/rpmbuild/BUILD/$name-$version" ) {
+            $scratch = "$scratch_dir.incremental";
+        } elsif ( ! -d "$scratch/home/abuild/rpmbuild/BUILD/$name-$version" ){
             debug("Build directory exists");
             $scratch = "$scratch_dir.incremental";
             push @args, "--stage=\"-bp\"";

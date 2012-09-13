@@ -1013,6 +1013,7 @@ while (! $TERM) {
             my $add = 1;
             foreach my $depp (@bdeps) {
                 if ((! grep($_ eq $depp, @skipped)) &&
+                    (! grep($_ eq $depp, @expansion_errors)) &&
                     (! grep($_ eq $depp, @done))) {
                     debug("not adding $name, since it depends on $depp");
                     $add = 0;

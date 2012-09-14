@@ -806,7 +806,8 @@ sub build_package {
         system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS") == 0 or die "mv";
         system ("cp $scratch/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS") == 0 or die "mv";
         mkdir_p "$localrepo/$dist/$arch/logs/success/$name-$version-$release";
-        system ("mv $scratch/.build.log $localrepo/$dist/$arch/logs/success/$name-$version-$release/log") == 0 or die "mv";
+        system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/success/$name-$version-$release/log") == 0 or die "mv";
+        system ("sudo rm -f $scratch/.build.log ") == 0 or die "rm";
         # Detach and terminate
         {
             lock($DETACHING);
@@ -825,7 +826,8 @@ sub build_package {
     } else {
         mkdir_p "$localrepo/$dist/$arch/logs/fail/$name-$version-$release";
         if ( -f "$scratch/.build.log" ) {
-            system ("mv $scratch/.build.log $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log") == 0 or die "cp";
+            system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log") == 0 or die "cp";
+            system ("sudo rm -f $scratch/.build.log") == 0 or die "rm";
             warning("Build failed, Leaving the logs in $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log");
         }
         # Detach and terminate

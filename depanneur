@@ -110,6 +110,7 @@ my @original_specs = ();
 my @cleaned : shared = ();
 my @errors :shared;
 my @expansion_errors = ();
+my @tmp_expansion_errors = ();
 my $packages_built :shared  = 0;
 my %workers = ();
 
@@ -663,7 +664,7 @@ sub source_of {
 
 sub update_pkgdeps()
 {
-    @expansion_errors = ();
+    @tmp_expansion_errors = ();
     foreach my $name (keys %to_build) {
         if(! (grep $_ eq $name, @skipped)) {
             my $fn = $to_build{$name}->{filename};
@@ -672,7 +673,7 @@ sub update_pkgdeps()
             if (!shift @bdeps ) {
                 debug("expansion error");
                 debug("  $_") for @bdeps;
-                push @expansion_errors, $name;
+                push @tmp_expansion_errors, $name;
                 next;
             }
             my @deps;
@@ -1036,6 +1037,16 @@ while (! $TERM) {
 
     if (scalar(keys %to_build) == @done + @skipped + @expansion_errors && !$dirty) {
         last;
+    }
+
+    # No candidate packges and all thread works are idle, and pkgdeps
+    # is updated, in this case, set packages in @tmp_expansion_errors
+    # as real expansion_errors, and all packages depend on these packages
+    # can not be blocked.
+    if (@order == 0 && threads->list() == 0 && $dirty == 0) {
+        foreach my $pkg (@tmp_expansion_errors) {
+            push @expansion_errors, $pkg if (! (grep $_ eq $pkg, @expansion_errors));
+        }
     }
 
     if (@order == 0) {

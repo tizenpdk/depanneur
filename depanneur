@@ -800,6 +800,7 @@ sub build_package {
     } else {
         push @args, "--root $scratch";
         push @args, "--clean" if (-e "$scratch/not-ready");
+        push @args, $redirect;
     }
     
     $cmd = join(" ", @args);
@@ -882,20 +883,23 @@ foreach my $sp (@original_specs) {
 
 info("Retrieving repo metadata...");
 my $repos_setup = 1;
-
-system("> $order_dir/.repo.cache");
+system("> $order_dir/.repo.cache.local");
+if (-d "$localrepo/$dist/$arch/RPMS") {
+    system("$build_dir/createrpmdeps $localrepo/$dist/$arch/RPMS >> $order_dir/.repo.cache.local");
+    system("echo D: >> $order_dir/.repo.cache.local");
+}
+system("> $order_dir/.repo.cache.remote");
 foreach my $repo (@package_repos) {
-    my $cmd = "$build_dir/createrepomddeps --cachedir=$cache_dir $repo >> $order_dir/.repo.cache ";
+    my $cmd = "$build_dir/createrepomddeps --cachedir=$cache_dir $repo >> $order_dir/.repo.cache.remote ";
     debug($cmd);
     if ( system($cmd) == 0 ) {
-        system("echo D: >> $order_dir/.repo.cache");
+        system("echo D: >> $order_dir/.repo.cache.remote");
     } else {
         $repos_setup = 0;
     }
 }
-
-# Save .repo.cache as remote repo cache
-system("cp $order_dir/.repo.cache $order_dir/.repo.cache.remote");
+# Merge local repo cache and remote repo cache
+system("cat $order_dir/.repo.cache.local $order_dir/.repo.cache.remote >$order_dir/.repo.cache");
 
 if ($repos_setup == 0 ) {
     error("repo cache creation failed...");

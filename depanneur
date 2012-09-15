@@ -666,6 +666,7 @@ sub update_pkgdeps()
 {
     @tmp_expansion_errors = ();
     foreach my $name (keys %to_build) {
+        next if (defined $pkgdeps{$name});
         if(! (grep $_ eq $name, @skipped)) {
             my $fn = $to_build{$name}->{filename};
             debug("Checking dependencies for $name");

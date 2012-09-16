@@ -18,6 +18,7 @@ use Term::ANSIColor qw(:constants);
 use File::Path;
 use File::Basename;
 use URI;
+use POSIX ":sys_wait_h";
 
 # Global vars
 
@@ -30,12 +31,6 @@ my $DETACHING:shared;
 
 # Flag to inform main thread update pkgdeps
 my $dirty:shared=0;
-
-# Signal handling
-$SIG{'INT'} = $SIG{'TERM'} = sub {
-        print("^C captured\n");
-        $TERM=1;
-};
 
 # Set the variable $File::Find::dont_use_nlink if you're using AFS,
 # since AFS cheats.
@@ -223,6 +218,19 @@ sub error {
     exit 1;
 }
 
+sub my_system {
+    my $cmd = shift;
+    my $ret;
+    defined(my $pid=fork) or die "Can not fork: $!\n";
+    unless ($pid) {
+        exec ($cmd);
+        exit -1;
+    }
+    waitpid ($pid,0);
+    $ret = WIFEXITED($?);
+    $ret = $?;
+    return $ret;
+}
 
 my @package_repos = ();
 my $Config;
@@ -392,7 +400,7 @@ sub prepare_git {
         open(GIT,"git --git-dir $base/.git rev-parse  $commit_id|") || die "Failed: $!\n";
         while (my $current_rev = <GIT>) {
             chomp($current_rev);
-            if ( system("grep -rq $current_rev $cache_path") == 0 ) {
+            if ( my_system("grep -rq $current_rev $cache_path") == 0 ) {
                open(GREP,"grep -rl $current_rev $cache_path |") || die "Failed: $!\n";
                while ( <GREP> ) {
                     chomp;
@@ -441,7 +449,7 @@ sub prepare_git {
             push @args, "--commit=$commit";
         }
         $cmd = join(" ", @args);
-        if ( system($cmd) == 0 ) {
+        if ( my_system($cmd) == 0 ) {
             push(@packs, "$pkg_path/$pkg_name-$pkg_version-$pkg_release/$spec_file");
         } else {
             unlink "$cache_path/$pkg_name-$pkg_version-$pkg_release";
@@ -607,16 +615,16 @@ sub createrepo
     my $arch = shift;
     my $dist = shift;
     mkdir_p "$localrepo/$dist/src/SRPMS";
-    system ("cd $localrepo/$dist/src && rm -rf repodata && createrepo --changelog-limit=0 -q . > /dev/null 2>&1 ") == 0 or die "createrepo failed: $?\n";
+    my_system ("cd $localrepo/$dist/src && rm -rf repodata && createrepo --changelog-limit=0 -q . > /dev/null 2>&1 ") == 0 or die "createrepo failed: $?\n";
     mkdir_p "$localrepo/$dist/$arch/RPMS";
-    system("touch $localrepo/$dist/$arch/RPMS");
+    my_system("touch $localrepo/$dist/$arch/RPMS");
     
     my $groups = "";
     if ( -e $groupfile ) {
         $groups = " --groupfile=$groupfile ";
     }
 
-    system ("cd $localrepo/$dist/$arch && rm -rf repodata && createrepo $groups --changelog-limit=0 -q --exclude 'logs/*rpm' . > /dev/null 2>&1 ") == 0
+    my_system ("cd $localrepo/$dist/$arch && rm -rf repodata && createrepo $groups --changelog-limit=0 -q --exclude 'logs/*rpm' . > /dev/null 2>&1 ") == 0
         or die "createrepo failed: $?\n";
 }
 
@@ -710,7 +718,7 @@ sub build_package {
     my @args_inc = ();
     {
         lock ($DETACHING);
-        system("sudo -v");
+        my_system("sudo -v");
     }
     push @args, "sudo -E $virtualenv/usr/bin/build";
     if ($arch ne "i586" ) {
@@ -768,12 +776,12 @@ sub build_package {
             push @args, "--clean";
             push @args, $redirect;
             $cmd = join(" ", @args);
-            system ($cmd);
+            my_system ($cmd);
         } else {
             info("Build directory does not exist");
         }
         my $mount = "sudo mount -o bind $package_path $scratch/home/abuild/rpmbuild/BUILD/$name-$version";
-        system($mount);
+        my_system($mount);
         if ($run_configure == 1 ) {
             push @args_inc, "--define '%configure echo'";
             push @args_inc, "--define '%reconfigure echo'";
@@ -786,10 +794,10 @@ sub build_package {
         push @args_inc, "--short-circuit --stage=\"-bc\"";
         push @args_inc, $redirect;
         $cmd = join(" ", @args_inc);
-        system ($cmd);
+        my_system ($cmd);
 
         $mount = "sudo umount $scratch/home/abuild/rpmbuild/BUILD/$name-$version";
-        system($mount);
+        my_system($mount);
         # Detach and terminate
         {
             lock($DETACHING);
@@ -805,25 +813,25 @@ sub build_package {
     
     $cmd = join(" ", @args);
     debug($cmd);
-    if (system ($cmd) == 0 ) {
+    if (my_system ($cmd) == 0 ) {
         if (glob "$scratch/home/abuild/rpmbuild/SRPMS/*.rpm") {
-            system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS");
+            my_system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS");
         }
         if (glob "$scratch/home/abuild/rpmbuild/RPMS/*/*.rpm") {
-            system ("cp $scratch/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS");
+            my_system ("cp $scratch/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS");
         }
         mkdir_p "$localrepo/$dist/$arch/logs/success/$name-$version-$release";
         if (-e "$scratch/.build.log") {
-            system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/success/$name-$version-$release/log");
-            system ("sudo rm -f $scratch/.build.log ");
+            my_system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/success/$name-$version-$release/log");
+            my_system ("sudo rm -f $scratch/.build.log ");
         }
         # Detach and terminate
         {
             lock($DETACHING);
-            system("$build_dir/createrpmdeps $localrepo/$dist/$arch/RPMS > $order_dir/.repo.cache.local ");
-            system("echo D: >> $order_dir/.repo.cache.local");
+            my_system("$build_dir/createrpmdeps $localrepo/$dist/$arch/RPMS > $order_dir/.repo.cache.local ");
+            my_system("echo D: >> $order_dir/.repo.cache.local");
             # Merge local repo catch and remote repo cache
-            system("cat $order_dir/.repo.cache.local $order_dir/.repo.cache.remote >$order_dir/.repo.cache");
+            my_system("cat $order_dir/.repo.cache.local $order_dir/.repo.cache.remote >$order_dir/.repo.cache");
             $dirty = 1;
             threads->detach() if ! threads->is_detached();
             @running = grep { $_ ne "$name"} @running;
@@ -835,8 +843,8 @@ sub build_package {
     } else {
         mkdir_p "$localrepo/$dist/$arch/logs/fail/$name-$version-$release";
         if ( -f "$scratch/.build.log" ) {
-            system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log");
-            system ("sudo rm -f $scratch/.build.log");
+            my_system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log");
+            my_system ("sudo rm -f $scratch/.build.log");
             warning("Build failed, Leaving the logs in $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log");
         }
         # Detach and terminate
@@ -883,23 +891,23 @@ foreach my $sp (@original_specs) {
 
 info("Retrieving repo metadata...");
 my $repos_setup = 1;
-system("> $order_dir/.repo.cache.local");
+my_system("> $order_dir/.repo.cache.local");
 if (-d "$localrepo/$dist/$arch/RPMS") {
-    system("$build_dir/createrpmdeps $localrepo/$dist/$arch/RPMS >> $order_dir/.repo.cache.local");
-    system("echo D: >> $order_dir/.repo.cache.local");
+    my_system("$build_dir/createrpmdeps $localrepo/$dist/$arch/RPMS >> $order_dir/.repo.cache.local");
+    my_system("echo D: >> $order_dir/.repo.cache.local");
 }
-system("> $order_dir/.repo.cache.remote");
+my_system("> $order_dir/.repo.cache.remote");
 foreach my $repo (@package_repos) {
     my $cmd = "$build_dir/createrepomddeps --cachedir=$cache_dir $repo >> $order_dir/.repo.cache.remote ";
     debug($cmd);
-    if ( system($cmd) == 0 ) {
-        system("echo D: >> $order_dir/.repo.cache.remote");
+    if ( my_system($cmd) == 0 ) {
+        my_system("echo D: >> $order_dir/.repo.cache.remote");
     } else {
         $repos_setup = 0;
     }
 }
 # Merge local repo cache and remote repo cache
-system("cat $order_dir/.repo.cache.local $order_dir/.repo.cache.remote >$order_dir/.repo.cache");
+my_system("cat $order_dir/.repo.cache.local $order_dir/.repo.cache.remote >$order_dir/.repo.cache");
 
 if ($repos_setup == 0 ) {
     error("repo cache creation failed...");
@@ -1013,6 +1021,12 @@ foreach my $name (keys %to_build) {
 
 # Create & Update package dependency
 update_pkgdeps();
+
+# Signal handling
+$SIG{'INT'} = $SIG{'TERM'} = sub {
+        print("^C captured\n");
+        $TERM=1;
+};
 
 while (! $TERM) {
     my @order = ();

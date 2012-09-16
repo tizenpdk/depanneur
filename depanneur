@@ -372,8 +372,8 @@ sub prepare_git {
     my $prj = basename($base);
 
     my $pack = Build::Rpm::parse($config, $spec);
-    if (! exists $pack->{name}) {
-        debug("failed to parse spec file: $spec");
+    if (! exists $pack->{name} || ! exists $pack->{version} || ! exists $pack->{release}) {
+        debug("failed to parse spec file: $spec, name,version,release fields must be present");
         return;
     }
     my $pkg_name = $pack->{name};

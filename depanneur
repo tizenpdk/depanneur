@@ -390,6 +390,7 @@ sub prepare_git {
     my $spec_file = basename($spec);
     my $skip = 0;
     my $old_base = "";
+    my $cache_rev = "";
     if ( -e "$base/.git" ) {
         my $commit_id;
         if ($commit eq ""){
@@ -400,6 +401,7 @@ sub prepare_git {
         open(GIT,"git --git-dir $base/.git rev-parse  $commit_id|") || die "Failed: $!\n";
         while (my $current_rev = <GIT>) {
             chomp($current_rev);
+            $cache_rev = $current_rev;
             if ( my_system("grep -rq $current_rev $cache_path") == 0 ) {
                open(GREP,"grep -rl $current_rev $cache_path |") || die "Failed: $!\n";
                while ( <GREP> ) {
@@ -422,9 +424,6 @@ sub prepare_git {
                 }
             }
             close (REV); 
-            open (REV1, "+> $cache_path/$pkg_name-$pkg_version-$pkg_release");
-            print REV1 $current_rev . "\n";
-            close (REV1); 
         }
         close(GIT);
     } else {
@@ -450,6 +449,11 @@ sub prepare_git {
         }
         $cmd = join(" ", @args);
         if ( my_system($cmd) == 0 ) {
+            # Set cache_rev as 'include-all' if --include-all specified
+            $cache_rev = "include-all" if ($includeall == 1);
+            open (REV1, "+> $cache_path/$pkg_name-$pkg_version-$pkg_release");
+            print REV1 $cache_rev . "\n";
+            close (REV1);
             push(@packs, "$pkg_path/$pkg_name-$pkg_version-$pkg_release/$spec_file");
         } else {
             unlink "$cache_path/$pkg_name-$pkg_version-$pkg_release";

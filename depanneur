@@ -771,7 +771,7 @@ sub build_package {
     @args_inc = @args;
     my $cmd = "";
     if ($incremental == 1) {
-        info("Doing incremental build");
+        info("doing incremental build");
         my $buildcmd = "";
         if ( -d "$scratch_dir.incremental/home/abuild/rpmbuild/BUILD/$name-$version" ) {
             $scratch = "$scratch_dir.incremental";
@@ -785,7 +785,7 @@ sub build_package {
             $cmd = join(" ", @args);
             my_system ($cmd);
         } else {
-            info("Build directory does not exist");
+            info("build directory does not exist");
         }
         my $mount = "sudo mount -o bind $package_path $scratch/home/abuild/rpmbuild/BUILD/$name-$version";
         my_system($mount);
@@ -852,7 +852,7 @@ sub build_package {
         if ( -f "$scratch/.build.log" ) {
             my_system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log");
             my_system ("sudo rm -f $scratch/.build.log");
-            warning("Build failed, Leaving the logs in $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log");
+            warning("build failed, Leaving the logs in $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log");
         }
         # Detach and terminate
         {
@@ -870,7 +870,7 @@ sub build_package {
 
 
 # MAIN
-info("Start building packages from: " . $package_path . " ($style)");
+info("start building packages from: " . $package_path . " ($style)");
 
 if ($buildall || @packs == 0 ) {
     if ($style eq "git") {
@@ -890,13 +890,13 @@ if ($buildall || @packs == 0 ) {
     }
 }
 
-info("Prepare sources...");
+info("prepare sources...");
 foreach my $sp (@original_specs) {
     prepare_git($config, $sp);
 }
 
 
-info("Retrieving repo metadata...");
+info("retrieving repo metadata...");
 my $repos_setup = 1;
 my_system("> $order_dir/.repo.cache.local");
 if (-d "$localrepo/$dist/$arch/RPMS") {
@@ -920,7 +920,7 @@ if ($repos_setup == 0 ) {
     error("repo cache creation failed...");
 }
 
-info("Parsing package data...");
+info("parsing package data...");
 my %packs = parse_packs($config, @packs);
 
 if ($binarylist ne "" && -e $binarylist ) {
@@ -985,7 +985,7 @@ if ($binarylist ne "" && -e $binarylist ) {
 
     %hash = map { $_, 1 } @tobuild;
     @tobuild = keys %hash;
-    info ("Initial set:");
+    info ("initial set:");
     foreach my $p (@tobuild) {
         print " $p, ";
     }
@@ -1008,7 +1008,7 @@ for(my $w = 0; $w < $MAX_THREADS; $w++) {
 }
 
 if ( ! -e "$localrepo/$dist/$arch/RPMS" ) {
-    info("Creating repo...");
+    info("creating repo...");
     createrepo ($arch, $dist);
 }
 
@@ -1086,7 +1086,7 @@ while (! $TERM) {
         sleep(1);
         next;
     } else {
-        info("Next pass:");
+        info("next pass:");
         foreach my $o (@order) {
             print $o . "\n";
         }
@@ -1125,7 +1125,7 @@ while ((threads->list() > 0)) {
 }
 
 if ($packages_built) {
-    info("Updating local repo");
+    info("updating local repo");
     createrepo ($arch, $dist);
 }
 
@@ -1133,11 +1133,11 @@ if (@errors || @expansion_errors) {
     my $error_pkgs;
     if (@errors) {
         $error_pkgs = join("\n", @errors);
-        warning("The following packages build failed with rpmbuild issue:\n$error_pkgs");
+        warning("the following packages build failed with rpmbuild issue:\n$error_pkgs");
     }
     if (@expansion_errors) {
         $error_pkgs = join("\n", @expansion_errors);
-        warning("The following packages build failed with missing depends packages:\n$error_pkgs");
+        warning("the following packages build failed with missing depends packages:\n$error_pkgs");
     }
 }
 

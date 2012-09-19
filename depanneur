@@ -66,6 +66,9 @@ my $binarylist = "";
 my $buildall = 0;
 my $commit = "";
 my $includeall = 0;
+my $upstream_branch = "";
+my $upstream_tag = "";
+my $squash_patches_until = "";
 my $dist = "tizen";
 my $dryrun = 0;
 my $help = 0;
@@ -122,6 +125,9 @@ GetOptions (
     "build-all" => \$buildall,
     "commit=s" => \$commit,
     "include-all" => \$includeall,
+    "upstream-branch=s" => \$upstream_branch,
+    "upstream-tag=s" => \$upstream_tag,
+    "squash-patches-until=s" => \$squash_patches_until,
     "binary=s" => \$binarylist,
     "style=s" => \$style,
     "path=s" => \$path,
@@ -446,6 +452,15 @@ sub prepare_git {
             push @args, "--include-all";
         } elsif ($commit ne "") {
             push @args, "--commit=$commit";
+        }
+        if (! $upstream_branch eq "") {
+            push @args, "--upstream-branch=$upstream_branch";
+        }
+        if (! $upstream_tag eq "") {
+            push @args, "--upstream-tag=$upstream_tag";
+        }
+        if (! $squash_patches_until eq "") {
+            push @args, "--squash-patches-until=$squash_patches_until";
         }
         $cmd = join(" ", @args);
         if ( my_system($cmd) == 0 ) {

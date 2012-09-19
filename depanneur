@@ -464,6 +464,13 @@ sub prepare_git {
         }
         $cmd = join(" ", @args);
         if ( my_system($cmd) == 0 ) {
+            my $pattern = "$localrepo/$dist/src/SRPMS/$pkg_name-$pkg_version-$pkg_release.*.rpm";
+            my @binaries = glob $pattern;
+            if (@binaries != 0) {
+                # Remove old source rpm packages to build again, or depanneur
+                # will skip packages with src.rpm exists
+                my_system ("rm -f $pattern");
+            }
             # Set cache_rev as 'include-all' if --include-all specified
             $cache_rev = "include-all" if ($includeall == 1);
             open (REV1, "+> $cache_path/$pkg_name-$pkg_version-$pkg_release");

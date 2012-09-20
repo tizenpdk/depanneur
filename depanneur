@@ -805,7 +805,10 @@ sub build_package {
             push @args, "--clean";
             push @args, $redirect;
             $cmd = join(" ", @args);
-            my_system ($cmd);
+            if (my_system($cmd) != 0) {
+                threads->detach() if ! threads->is_detached();
+                return -1;
+            }
         } else {
             info("build directory does not exist");
         }

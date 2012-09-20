@@ -927,7 +927,12 @@ if (-d "$localrepo/$dist/$arch/RPMS") {
 }
 my_system("> $order_dir/.repo.cache.remote");
 foreach my $repo (@package_repos) {
-    my $cmd = "$build_dir/createrepomddeps --cachedir=$cache_dir $repo >> $order_dir/.repo.cache.remote ";
+    my $cmd = "";
+    if ($repo =~ /^\// && ! -e "$repo/repodata/repomd.xml") {
+        $cmd = "$build_dir/createrpmdeps $repo >> $order_dir/.repo.cache.remote ";
+    } else {
+        $cmd = "$build_dir/createrepomddeps --cachedir=$cache_dir $repo >> $order_dir/.repo.cache.remote ";
+    }
     debug($cmd);
     if ( my_system($cmd) == 0 ) {
         my_system("echo D: >> $order_dir/.repo.cache.remote");

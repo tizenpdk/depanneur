@@ -837,6 +837,7 @@ sub build_package {
             threads->detach() if ! threads->is_detached();
         }
         info("finished incremental building $name");
+        info("building log can be found here: $scratch/.build.log");
         exit(0);
     } else {
         push @args, "--root $scratch";

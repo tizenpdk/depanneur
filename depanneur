@@ -778,7 +778,8 @@ sub build_package {
         push @args, "--repository $r";
     }
 
-    if ( ($clean || $cleanonce ) && ( ! grep $_ == $thread, @cleaned) )  {
+    if ( ($clean || $cleanonce ) && ( ! grep $_ == $thread, @cleaned) &&
+          $incremental == 0)  {
        push @args, "--clean";
        if ($cleanonce) {
             push(@cleaned, $thread);

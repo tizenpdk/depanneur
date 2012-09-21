@@ -1033,6 +1033,10 @@ if ($binarylist ne "" && -e $binarylist ) {
     %to_build = %packs
 }
 
+if ($incremental == 1 && ! -d "$package_path/.git") {
+    # if $package_path/.git exists, one package found for building
+    error("incremental build only support building one package");
+}
 
 # Prepare Workers
 for(my $w = 0; $w < $MAX_THREADS; $w++) {

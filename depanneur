@@ -1075,30 +1075,32 @@ while (! $TERM) {
     my @order = ();
     my @o = ();
 
-    if ($dirty) {
-        update_pkgdeps();
-        $dirty = 0;
-    }
-
-    foreach my $name (keys %to_build) {
-        if( ! (grep $_ eq $name, @done) && 
-            ! (grep $_ eq $name, @skipped) &&
-            ! (grep $_ eq $name, @running))
-        {
-            next if (! exists $pkgdeps{$name});
-            my @bdeps = @{$pkgdeps{$name}};
-            my $add = 1;
-            foreach my $depp (@bdeps) {
-                if ((! grep($_ eq $depp, @skipped)) &&
-                    (! grep($_ eq $depp, @expansion_errors)) &&
-                    (! grep($_ eq $depp, @done))) {
-                    debug("not adding $name, since it depends on $depp");
-                    $add = 0;
-                    last;
+    {
+        lock($DETACHING);
+        if ($dirty) {
+            update_pkgdeps();
+            $dirty = 0;
+        }
+        foreach my $name (keys %to_build) {
+            if( ! (grep $_ eq $name, @done) &&
+                ! (grep $_ eq $name, @skipped) &&
+                ! (grep $_ eq $name, @running))
+            {
+                next if (! exists $pkgdeps{$name});
+                my @bdeps = @{$pkgdeps{$name}};
+                my $add = 1;
+                foreach my $depp (@bdeps) {
+                    if ((! grep($_ eq $depp, @skipped)) &&
+                        (! grep($_ eq $depp, @expansion_errors)) &&
+                        (! grep($_ eq $depp, @done))) {
+                        debug("not adding $name, since it depends on $depp");
+                        $add = 0;
+                        last;
+                    }
                 }
-            }
-            if ($add == 1 ) {
-                push(@order, $name);
+                if ($add == 1 ) {
+                    push(@order, $name);
+                }
             }
         }
     }

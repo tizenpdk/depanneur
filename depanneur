@@ -268,7 +268,7 @@ my $cache_path = "$build_root/local/sources/$dist/cache";
 my $scratch_dir = "$build_root/local/scratch.$arch";
 
 
-sub mkdir_p($) {
+sub mkdir_p {
     my $path = shift;
     my $err_msg;
     # attempt a 'mkdir -p' on the provided path and catch any errors returned
@@ -341,7 +341,7 @@ sub obs_wanted {
     /^.*\.spec\z/s && fill_packs_from_obs($name);
 }
 
-sub fill_packs_from_obs() {
+sub fill_packs_from_obs {
     my $name = shift;
     $name =~ m/\.osc/ || push(@packs, $name);
 }
@@ -696,7 +696,7 @@ sub source_of {
     return undef;
 }
 
-sub update_pkgdeps()
+sub update_pkgdeps
 {
     @tmp_expansion_errors = ();
     foreach my $name (keys %to_build) {

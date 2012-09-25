@@ -1,4 +1,4 @@
-#!/usr/bin/perl 
+#!/usr/bin/perl
 #
 BEGIN {
   my ($wd) = $0 =~ m-(.*)/- ;
@@ -43,10 +43,8 @@ use vars qw/*name *dir *prune/;
 
 my ($zname, $zpass, $zuid, $zgid, $zquota, $zcomment, $zgcos, $zdir, $zshell, $zexpire) = getpwnam(getlogin());
 
-sub wanted;
 
-
-use Cwd;
+use Cwd qw(cwd abs_path);
 use Getopt::Long;
 use Pod::Usage;
 use File::Temp qw(tempfile);
@@ -159,23 +157,23 @@ Available options:
       Path to git repo tree, default is packages/ sub-directory
       in the developer environment.
 
-    --clean 
+    --clean
       clean the build environment before building a package.
 
     --clean-once
-      clean the build environment only once when you start 
-      building multiple packages, after that use existing 
+      clean the build environment only once when you start
+      building multiple packages, after that use existing
       environment for all packages.
 
     --threads  [number of threads]
-      Build packages in parallel. This will start up to the 
-      specified number of build jobs when there are more 
+      Build packages in parallel. This will start up to the
+      specified number of build jobs when there are more
       than 1 job in the queue.
 
     --overwrite
       Overwrite existing binaries.
 
-    --keepgoing 
+    --keepgoing
       If a package build fails, do not abort and continue
       building other packages in the queue.
 
@@ -185,7 +183,7 @@ Available options:
       helpful when debugging build failures and helps with
       speeding up development.
       This option options mounts the local tree in the build
-      environment and builds using sources in the git tree, 
+      environment and builds using sources in the git tree,
       if the build fails, changes can be done directly to the
       source and build can continue from where it stopped.
 
@@ -281,7 +279,7 @@ sub mkdir_p {
         }
         print STDERR "$err_msg";
     }
-} 
+}
 
 if ( $exclude_from_file ne "" && -e $exclude_from_file ) {
     debug("using $exclude_from_file for package exclusion");
@@ -311,7 +309,7 @@ if ( $arch eq "i586" ) {
 }
 my $archpath;
 foreach my $ap (@archs) {
-    $archpath .= $ap.":"; 
+    $archpath .= $ap.":";
 }
 my $config = Build::read_config_dist($dist, $archpath, $dist_configs);
 
@@ -321,7 +319,7 @@ if ( -d "packaging" && -d ".git" ) {
     if ( $path eq "" ) {
         $package_path = "$build_root/packages";
     } else {
-        $package_path = $path;
+        $package_path = abs_path($path);
     }
 }
 if ($binarylist ne "") {
@@ -329,13 +327,8 @@ if ($binarylist ne "") {
 }
 
 sub git_wanted {
-    my ($dev,$ino,$mode,$nlink,$uid,$gid);
-    /^packaging\z/s &&
-    (($dev,$ino,$mode,$nlink,$uid,$gid) = lstat($_)) &&
-    -d _
-    && fill_packs_from_git($name, $config);
+    fill_packs_from_git($name) if /^packaging\z/s && -d $_;
 }
-
 
 sub obs_wanted {
     /^.*\.spec\z/s && fill_packs_from_obs($name);
@@ -429,7 +422,7 @@ sub prepare_git {
                     $skip = 1;
                 }
             }
-            close (REV); 
+            close (REV);
         }
         close(GIT);
     } else {
@@ -644,7 +637,7 @@ sub createrepo
     my_system ("cd $localrepo/$dist/src && rm -rf repodata && createrepo --changelog-limit=0 -q . > /dev/null 2>&1 ") == 0 or die "createrepo failed: $?\n";
     mkdir_p "$localrepo/$dist/$arch/RPMS";
     my_system("touch $localrepo/$dist/$arch/RPMS");
-    
+
     my $groups = "";
     if ( -e $groupfile ) {
         $groups = " --groupfile=$groupfile ";
@@ -844,7 +837,7 @@ sub build_package {
         push @args, "--clean" if (-e "$scratch/not-ready");
         push @args, $redirect;
     }
-    
+
     $cmd = join(" ", @args);
     debug($cmd);
     if (my_system ($cmd) == 0 ) {
@@ -971,7 +964,7 @@ if ($binarylist ne "" && -e $binarylist ) {
             $debuginfo =~ s/(.*)-debugsource/$1/;
             $debuginfo =~ s/(.*)-docs/$1/;
             my $nb;
-            if ($b ne $debuginfo) { 
+            if ($b ne $debuginfo) {
                 $nb = $debuginfo;
             } else {
                 $nb = $b;
@@ -980,13 +973,13 @@ if ($binarylist ne "" && -e $binarylist ) {
                 push(@tobuild, $name);
                 $found = 1 ;
                 last;
-            } 
+            }
         }
         if (!$found) {
             push(@tofind, $b);
         }
     }
-    
+
     #print $_ . ", " foreach(sort @tobuild);
     #print "\n";
     #print $_ . ", " foreach(sort @tofind);

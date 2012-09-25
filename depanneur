@@ -302,7 +302,7 @@ my $package_path = "";
 # FIXME
 
 my @arm_archs = ( "armv7el" , "armv7l", "noarch");
-my @ix86_archs = ("i586", "i686", "noarch");
+my @ix86_archs = ("i386", "i586", "i686", "noarch");
 my @archs = ();
 if ( $arch eq "i586" ) {
     @archs = @ix86_archs;

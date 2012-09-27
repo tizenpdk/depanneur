@@ -2,14 +2,15 @@
 #
 use strict;
 use warnings;
+use File::Spec::Functions;
 
 BEGIN {
   my ($wd) = $0 =~ m-(.*)/- ;
   $wd ||= '.';
-  my $virtual_env = $ENV{VIRTUAL_ENV} || '';
   unshift @INC,  "$wd/build";
   unshift @INC,  "$wd";
-  unshift @INC,  "$virtual_env/usr/lib/build"
+  $ENV{VIRTUAL_ENV} = "/" if ! defined $ENV{VIRTUAL_ENV};
+  unshift @INC,  canonpath("$ENV{VIRTUAL_ENV}/usr/lib/build");
 }
 
 use YAML qw(LoadFile);
@@ -82,7 +83,7 @@ my $order_dir = "$build_root/local/order";
 
 my $cache_dir = "$build_root/local/cache";
 my $groupfile="$build_root/meta/group.xml";
-my $build_dir = "$virtualenv/usr/lib/build";
+my $build_dir = canonpath("$virtualenv/usr/lib/build");
 $ENV{'BUILD_DIR'} = $build_dir; # must change env variable in main thread
 my $config_filename = "$build_root/meta/local.yaml";
 my $dist_configs = "$build_root/meta/dist";

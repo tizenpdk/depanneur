@@ -44,7 +44,12 @@ use vars qw/*name *dir *prune/;
 *dir    = *File::Find::dir;
 *prune  = *File::Find::prune;
 
-my ($zname, $zpass, $zuid, $zgid, $zquota, $zcomment, $zgcos, $zdir, $zshell, $zexpire) = getpwnam(getlogin());
+my ($zuid, $zgid);
+if (getlogin()) {
+     ($zuid, $zgid) = (getpwnam(getlogin()))[2,3];
+} else {
+     ($zuid, $zgid) = (getpwuid($<))[2,3];
+}
 
 
 use Cwd qw(cwd abs_path);

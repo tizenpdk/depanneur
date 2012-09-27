@@ -83,6 +83,7 @@ my $order_dir = "$build_root/local/order";
 my $cache_dir = "$build_root/local/cache";
 my $groupfile="$build_root/meta/group.xml";
 my $build_dir = "$virtualenv/usr/lib/build";
+$ENV{'BUILD_DIR'} = $build_dir; # must change env variable in main thread
 my $config_filename = "$build_root/meta/local.yaml";
 my $dist_configs = "$build_root/meta/dist";
 my $exclude_from_file = "$build_root/meta/exclude";
@@ -764,8 +765,6 @@ sub build_package {
 
     # Rebuild the package.
     info("*** building $name-$version-$release $arch $dist (worker: $thread) ***");
-
-    $ENV{'BUILD_DIR'} = $build_dir;
 
     if ( -d "$localrepo/$dist/$arch/RPMS" ) {
         push @args, "--repository $localrepo/$dist/$arch/RPMS";

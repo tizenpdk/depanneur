@@ -728,6 +728,34 @@ sub update_pkgdeps
     }
 }
 
+sub worker_thread {
+    my ($name, $thread) = @_;
+
+    my $status;
+    eval {
+        $status = build_package($name, $thread);
+    };
+    if ($@) {
+        warning("$@");
+        $status = -1;
+    }
+
+    {
+        lock($DETACHING);
+        threads->detach() if ! threads->is_detached();
+        @running = grep { $_ ne "$name"} @running;
+        push(@done, $name);
+        if ($status == 0) {
+            $dirty = 1;
+        } else {
+            push @errors, "$name-$dist-$arch";
+        }
+    }
+
+    debug("*** build $name exit with status($status), is dirty:$dirty, (worker: $thread) ***");
+    return $status;
+}
+
 sub build_package {
     my ($name, $thread) = @_;
     use vars qw(@package_repos);
@@ -748,7 +776,6 @@ sub build_package {
     {
         lock ($DETACHING);
         if ($TERM == 1 || my_system("sudo -v") != 0) {
-            threads->detach() if ! threads->is_detached();
             return -1;
         }
     }
@@ -807,10 +834,7 @@ sub build_package {
             push @args, "--clean";
             push @args, $redirect;
             $cmd = join(" ", @args);
-            if (my_system($cmd) != 0) {
-                threads->detach() if ! threads->is_detached();
-                return -1;
-            }
+            return -1 if (my_system($cmd) != 0);
         } else {
             info("build directory does not exist");
         }
@@ -832,14 +856,6 @@ sub build_package {
 
         $mount = "sudo umount $scratch/home/abuild/rpmbuild/BUILD/$name-$version";
         my_system($mount);
-        # Detach and terminate
-        {
-            lock($DETACHING);
-            threads->detach() if ! threads->is_detached();
-            $dirty = 1;
-            @running = grep { $_ ne "$name"} @running;
-            push(@done, $name);
-        }
         info("finished incremental building $name");
         info("building log can be found here: $scratch/.build.log");
         $packages_built = 1;
@@ -871,28 +887,16 @@ sub build_package {
             my_system("echo D: >> $order_dir/.repo.cache.local");
             # Merge local repo catch and remote repo cache
             my_system("cat $order_dir/.repo.cache.local $order_dir/.repo.cache.remote >$order_dir/.repo.cache");
-            $dirty = 1;
-            threads->detach() if ! threads->is_detached();
-            @running = grep { $_ ne "$name"} @running;
-            push(@done, $name);
         }
         info("finished building $name");
         $packages_built = 1;
-        return(0);
+        return 0;
     } else {
         mkdir_p "$localrepo/$dist/$arch/logs/fail/$name-$version-$release";
         if ( -f "$scratch/.build.log" ) {
             my_system ("cp $scratch/.build.log $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log");
             my_system ("sudo rm -f $scratch/.build.log");
             warning("build failed, Leaving the logs in $localrepo/$dist/$arch/logs/fail/$name-$version-$release/log");
-        }
-        # Detach and terminate
-        {
-            lock($DETACHING);
-            threads->detach() if ! threads->is_detached();
-            @running = grep { $_ ne "$name"} @running;
-            push(@done, $name);
-            push @errors, "$name-$dist-$arch";
         }
         return 1;
     }
@@ -1153,7 +1157,7 @@ while (! $TERM) {
             last if (! $job);
 
             my $worker = find_idle();
-            my $thr = threads->create('build_package',$job, $worker);
+            my $thr = threads->create(\&worker_thread, $job, $worker);
             my $tid = $thr->tid();
             push (@running, $job);
             set_busy($worker, $tid);

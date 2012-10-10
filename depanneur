@@ -233,6 +233,7 @@ sub error {
 
 sub my_system {
     my $cmd = shift;
+    debug("my_system: $cmd");
     my $ret;
     defined(my $pid=fork) or die "Can not fork: $!\n";
     unless ($pid) {
@@ -362,22 +363,88 @@ sub fill_packs_from_git {
     }
     debug("working on $base");
     my $pattern = "$name/*.spec";
-    my @specs = glob $pattern;
-    my $spec = "";
-    if (@specs > 1 ) {
-        if ( -e "$name/$prj.spec" ) {
-            $spec = "$name/$prj.spec";
-        } else {
-            return;
-        }
-    } elsif (@specs) {
-        $spec = $specs[0];
-    } else {
-        return;
-    }
-    push (@original_specs, $spec);
+    push(@original_specs, glob($pattern));
 }
 
+sub gbs_export {
+    my ($base, $spec) = @_;
+    my @args = ();
+    my $cmd;
+    push @args, "gbs export";
+    push @args, "$base";
+    push @args, "-o $pkg_path";
+    push @args, "--spec $spec";
+    if ($includeall == 1) {
+        push @args, "--include-all";
+    } elsif ($commit ne "") {
+        push @args, "--commit=$commit";
+    }
+    if (! $upstream_branch eq "") {
+        push @args, "--upstream-branch=$upstream_branch";
+    }
+    if (! $upstream_tag eq "") {
+        push @args, "--upstream-tag=$upstream_tag";
+    }
+    if (! $squash_patches_until eq "") {
+        push @args, "--squash-patches-until=$squash_patches_until";
+    }
+    $cmd = join(" ", @args);
+    return my_system($cmd);
+}
+
+sub read_cache {
+    my ($cache_key) = @_;
+    my $cache_fname = "$cache_path/$cache_key";
+
+    my $cache = '';
+    if (-e $cache_fname) {
+        open(my $rev, '<', $cache_fname) ||
+            die "read reversion cache($cache_fname) failed: $!";
+        $cache = readline($rev);
+        close($rev);
+        chomp $cache;
+    }
+    return $cache;
+}
+
+sub write_cache {
+    my ($cache_key, $cache_val, $base, $spec) = @_;
+    my $cache_fname = "$cache_path/$cache_key";
+
+    return if gbs_export($base, $spec) != 0;
+
+    my $pattern = "$localrepo/$dist/src/SRPMS/$cache_key.*.rpm";
+    my @binaries = glob $pattern;
+    if (@binaries != 0) {
+        # Remove old source rpm packages to build again, or depanneur
+        # will skip packages with src.rpm exists
+        my_system("rm -f $pattern");
+    }
+
+    open(my $rev1, "+>", $cache_fname) ||
+        die "write reversion cache($cache_fname) failed: $!";
+    print $rev1 $cache_val . "\n";
+    close($rev1);
+    1;
+}
+
+sub clean_cache {
+    my ($cache_key) = @_;
+    my $cache_fname = "$cache_path/$cache_key";
+
+    unlink $cache_fname;
+}
+
+sub query_git_commit_rev {
+    my ($base, $commit_id) = @_;
+
+    open(my $git, '-|', "git --git-dir $base/.git rev-parse $commit_id") || 
+        die "query git commit reversion($commit_id) failed: $!";
+    my $rev = readline($git);
+    close($git);
+    chomp $rev;
+    return $rev;
+}
 
 sub prepare_git {
     my $config = shift;
@@ -395,98 +462,38 @@ sub prepare_git {
     my $pkg_name = $pack->{name};
     my $pkg_version = $pack->{version};
     my $pkg_release = $pack->{release};
+    my $cache_key = "$pkg_name-$pkg_version-$pkg_release";
     my $spec_file = basename($spec);
     my $skip = 0;
-    my $old_base = "";
-    my $cache_rev = "";
-    if ( -e "$base/.git" ) {
+    my $current_rev = '';
+
+    if (! -e "$base/.git") {
+        debug("not a git repo: $base/.git!!");
+    } else {
         my $commit_id;
-        if ($commit eq ""){
+        if ($commit eq "") {
             $commit_id = "HEAD";
         }else{
             $commit_id = $commit;
         }
-        open(my $git, '-|', "git --git-dir $base/.git rev-parse  $commit_id") || die "Failed: $!\n";
-        while (my $current_rev = <$git>) {
-            chomp($current_rev);
-            $cache_rev = $current_rev;
-            if ( my_system("grep -rq $current_rev $cache_path") == 0 ) {
-               open(my $grep, '-|', "grep -rl $current_rev $cache_path") || die "Failed: $!\n";
-               while ( <$grep> ) {
-                    chomp;
-                   $old_base = $_;
-               }
-               close($grep);
-               $skip = 1;
-            }
-            my @lines = ();
-            my $rev;
-            if ( -e "$cache_path/$pkg_name-$pkg_version-$pkg_release" ) {
-                open($rev, '<', "$cache_path/$pkg_name-$pkg_version-$pkg_release");
-                @lines = <$rev>;
-            } else {
-                open($rev, '>', "$cache_path/$pkg_name-$pkg_version-$pkg_release");
-            }
-            foreach my $old_rev(@lines) {
-                if ( $current_rev eq $old_rev ) {
-                    $skip = 1;
-                }
-            }
-            close($rev);
-        }
-        close($git);
-    } else {
-        debug("not a git repo: $base/.git!!");
-    }
-    if ($skip == 1 && $includeall == 0) {
-        if ( $old_base ne "" ) {
-            $old_base = basename($old_base);
-            push(@packs, "$pkg_path/$old_base/$spec_file");
-        } else {
-            push(@packs, "$pkg_path/$pkg_name-$pkg_version-$pkg_release/$spec_file");
-        }
-    } else {
-        my @args = ();
-        my $cmd;
-        push @args, "gbs export";
-        push @args, "$base";
-        push @args, "-o $pkg_path";
-        if ($includeall == 1) {
-            push @args, "--include-all";
-        } elsif ($commit ne "") {
-            push @args, "--commit=$commit";
-        }
-        if (! $upstream_branch eq "") {
-            push @args, "--upstream-branch=$upstream_branch";
-        }
-        if (! $upstream_tag eq "") {
-            push @args, "--upstream-tag=$upstream_tag";
-        }
-        if (! $squash_patches_until eq "") {
-            push @args, "--squash-patches-until=$squash_patches_until";
-        }
-        $cmd = join(" ", @args);
-        if ( my_system($cmd) == 0 ) {
-            my $pattern = "$localrepo/$dist/src/SRPMS/$pkg_name-$pkg_version-$pkg_release.*.rpm";
-            my @binaries = glob $pattern;
-            if (@binaries != 0) {
-                # Remove old source rpm packages to build again, or depanneur
-                # will skip packages with src.rpm exists
-                my_system ("rm -f $pattern");
-            }
-            # Set cache_rev as 'include-all' if --include-all specified
-            $cache_rev = "include-all" if ($includeall == 1);
-            open(my $rev1, "+>", "$cache_path/$pkg_name-$pkg_version-$pkg_release");
-            print $rev1 $cache_rev . "\n";
-            close($rev1);
-            push(@packs, "$pkg_path/$pkg_name-$pkg_version-$pkg_release/$spec_file");
-        } else {
-            unlink "$cache_path/$pkg_name-$pkg_version-$pkg_release";
-            debug("$pkg_name was not exported correctly");
-        }
-    }
-}
 
+        $current_rev = query_git_commit_rev($base, $commit_id);
+
+        my $cached_rev = read_cache($cache_key);
+        $skip = ($cached_rev eq $current_rev);
+    }
+
+    if (!$skip || $includeall == 1) {
+        # Set cache_rev as 'include-all' if --include-all specified
+        my $val = ($includeall == 1) ? "include-all" : $current_rev;
+        unless (write_cache($cache_key, $val, $base, $spec)) {
+            clean_cache($cache_key);
+            debug("$pkg_name was not exported correctly");
+            return;
+        }
+    }
+    push(@packs, "$pkg_path/$cache_key/$spec_file");
+}
 
 sub parse_packs {
     my ($config, @packs) = @_;
@@ -1102,7 +1109,7 @@ while (! $TERM) {
                     if ((! grep($_ eq $depp, @skipped)) &&
                         (! grep($_ eq $depp, @expansion_errors)) &&
                         (! grep($_ eq $depp, @done))) {
-                        debug("not adding $name, since it depends on $depp");
+                        #debug("not adding $name, since it depends on $depp");
                         $add = 0;
                         last;
                     }

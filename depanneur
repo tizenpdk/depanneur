@@ -1176,11 +1176,11 @@ if (@errors || @expansion_errors) {
     my $error_pkgs;
     if (@errors) {
         $error_pkgs = join("\n", @errors);
-        warning("the following packages build failed with rpmbuild issue:\n$error_pkgs");
+        warning("the following packages failed to build due to rpmbuild issue:\n$error_pkgs");
     }
     if (@expansion_errors) {
         $error_pkgs = join("\n", @expansion_errors);
-        warning("the following packages build failed with missing depends packages:\n$error_pkgs");
+        warning("the following packages failed to build due to missing build dependencies:\n$error_pkgs");
     }
 }
 

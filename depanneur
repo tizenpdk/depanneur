@@ -22,7 +22,7 @@ use File::Path;
 use File::Basename;
 use URI;
 use POSIX ":sys_wait_h";
-
+use File::Glob ':glob';
 # Global vars
 
 
@@ -853,10 +853,10 @@ sub build_package {
     $cmd = join(" ", @args);
     debug($cmd);
     if (my_system ($cmd) == 0 ) {
-        if (glob "$scratch/home/abuild/rpmbuild/SRPMS/*.rpm") {
+        if (bsd_glob "$scratch/home/abuild/rpmbuild/SRPMS/*.rpm") {
             my_system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS");
         }
-        if (glob "$scratch/home/abuild/rpmbuild/RPMS/*/*.rpm") {
+        if (bsd_glob "$scratch/home/abuild/rpmbuild/RPMS/*/*.rpm") {
             my_system ("cp $scratch/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS");
         }
         mkdir_p "$localrepo/$dist/$arch/logs/success/$name-$version-$release";

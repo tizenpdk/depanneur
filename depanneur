@@ -113,9 +113,9 @@ my @skipped = ();
 my @original_specs = ();
 
 my @cleaned : shared = ();
-my @errors :shared;
-my @expansion_errors = ();
-my @tmp_expansion_errors = ();
+my %errors :shared;
+my %expansion_errors = ();
+my %tmp_expansion_errors = ();
 my $packages_built :shared  = 0;
 my %workers = ();
 
@@ -708,7 +708,7 @@ sub source_of {
 
 sub update_pkgdeps
 {
-    @tmp_expansion_errors = ();
+    %tmp_expansion_errors = ();
     foreach my $name (keys %to_build) {
         next if (defined $pkgdeps{$name});
         if(! (grep $_ eq $name, @skipped)) {
@@ -718,7 +718,7 @@ sub update_pkgdeps
             if (!shift @bdeps ) {
                 debug("expansion error");
                 debug("  $_") for @bdeps;
-                push @tmp_expansion_errors, $name;
+                $tmp_expansion_errors{$name} = [@bdeps];
                 next;
             }
             my @deps;
@@ -755,7 +755,13 @@ sub worker_thread {
         if ($status == 0) {
             $dirty = 1;
         } else {
-            push @errors, "$name-$dist-$arch";
+            my $version = $to_build{$name}->{version};
+            my $release = $to_build{$name}->{release};
+            if (-f "$localrepo/$dist/$arch/logs/fail/$name-$version-$release/log") {
+                $errors{"$name-$dist-$arch"} = "$localrepo/$dist/$arch/logs/fail/$name-$version-$release/log"
+            } else {
+                $errors{"$name-$dist-$arch"} = "";
+            }
         }
     }
 
@@ -1118,7 +1124,7 @@ while (! $TERM) {
                 my $add = 1;
                 foreach my $depp (@bdeps) {
                     if ((! grep($_ eq $depp, @skipped)) &&
-                        (! grep($_ eq $depp, @expansion_errors)) &&
+                        (! exists $expansion_errors{$depp}) &&
                         (! grep($_ eq $depp, @done))) {
                         #debug("not adding $name, since it depends on $depp");
                         $add = 0;
@@ -1132,18 +1138,17 @@ while (! $TERM) {
         }
     }
 
-    if (scalar(keys %to_build) == @done + @skipped + @expansion_errors && !$dirty) {
+    if (scalar(keys %to_build) == @done + @skipped +
+        scalar(keys %expansion_errors) && !$dirty) {
         last;
     }
 
     # No candidate packges and all thread works are idle, and pkgdeps
-    # is updated, in this case, set packages in @tmp_expansion_errors
+    # is updated, in this case, set packages in %tmp_expansion_errors
     # as real expansion_errors, and all packages depend on these packages
     # can not be blocked.
     if (@order == 0 && threads->list() == 0 && $dirty == 0) {
-        foreach my $pkg (@tmp_expansion_errors) {
-            push @expansion_errors, $pkg if (! (grep $_ eq $pkg, @expansion_errors));
-        }
+        @expansion_errors{keys %tmp_expansion_errors} = values %tmp_expansion_errors;
     }
 
     if (@order == 0) {
@@ -1194,14 +1199,20 @@ if ($packages_built) {
     createrepo ($arch, $dist);
 }
 
-if (@errors || @expansion_errors) {
+if (%errors || %expansion_errors) {
     my $error_pkgs;
-    if (@errors) {
-        $error_pkgs = join("\n", @errors);
+    if (%errors) {
+        $error_pkgs = "";
+        foreach my $pkg (keys %errors) {
+            $error_pkgs .= "$pkg: $errors{$pkg}\n";
+        }
         warning("the following packages failed to build due to rpmbuild issue:\n$error_pkgs");
     }
-    if (@expansion_errors) {
-        $error_pkgs = join("\n", @expansion_errors);
+    if (%expansion_errors) {
+        $error_pkgs = "";
+        foreach my $pkg (keys %expansion_errors) {
+            $error_pkgs .= "$pkg:\n  " . join("\n  ", @{$expansion_errors{$pkg}}) . "\n";
+        }
         warning("the following packages failed to build due to missing build dependencies:\n$error_pkgs");
     }
 }

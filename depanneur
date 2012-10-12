@@ -212,7 +212,7 @@ Available options:
 sub debug {
     my $msg = shift;
     $msg =~ s#://[^@]*@#://#g;
-    print YELLOW, "debug: $msg\n", RESET if $debug == 1;
+    print MAGENTA, "debug: ", RESET, "$msg\n" if $debug == 1;
 }
 
 sub info {

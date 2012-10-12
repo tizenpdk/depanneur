@@ -64,6 +64,9 @@ use Build::Rpm;
 use Data::Dumper;
 use File::Basename;
 
+# "sudo -v" period
+use constant SUDOV_PERIOD => 300;
+
 my @threads;
 my @exclude = ();
 my @repos= ();
@@ -1108,6 +1111,16 @@ $SIG{'INT'} = $SIG{'TERM'} = sub {
         print("^C captured\n");
         $TERM=1;
 };
+
+$SIG{'ALRM'} = sub {
+    {
+        lock ($SUDOV_LOCK);
+        my_system("sudo -v");
+    }
+    alarm(SUDOV_PERIOD);
+};
+
+alarm(SUDOV_PERIOD);
 
 while (! $TERM) {
     my @order = ();

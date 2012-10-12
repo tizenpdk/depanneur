@@ -438,7 +438,7 @@ sub clean_cache {
 sub query_git_commit_rev {
     my ($base, $commit_id) = @_;
 
-    open(my $git, '-|', "git --git-dir $base/.git rev-parse $commit_id") || 
+    open(my $git, '-|', "git --git-dir $base/.git rev-parse $commit_id") ||
         die "query git commit reversion($commit_id) failed: $!";
     my $rev = readline($git);
     close($git);
@@ -910,9 +910,20 @@ sub build_package {
 
 }
 
-
+sub strip_trailing_slash_for_proxy_env {
+    for my $key ("http_proxy", "https_proxy") {
+        if (exists $ENV{$key} && $ENV{$key} =~ m#/$#) {
+            #build could fail if proxy url ends with '/'
+            #failed: 500 Can't connect to xxx:xxx
+            $ENV{$key} =~ s#/+$##;
+            debug("strip trailing slash for env $key");
+        }
+    }
+}
 
 # MAIN
+strip_trailing_slash_for_proxy_env;
+
 info("start building packages from: " . $package_path . " ($style)");
 
 if ($buildall || @packs == 0 ) {

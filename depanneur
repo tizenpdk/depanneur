@@ -23,6 +23,7 @@ use File::Basename;
 use URI;
 use POSIX ":sys_wait_h";
 use File::Glob ':glob';
+use User::pwent;
 # Global vars
 
 
@@ -88,6 +89,7 @@ my $keepgoing = 0;
 
 my $virtualenv = "$ENV{'VIRTUAL_ENV'}";
 my $build_root = $ENV{TIZEN_BUILD_ROOT};
+$build_root = expand_filename($build_root);
 my $localrepo = "$build_root/local/repos";
 my $order_dir = "$build_root/local/order";
 
@@ -250,6 +252,16 @@ sub my_system {
     $ret = WIFEXITED($?);
     $ret = $?;
     return $ret;
+}
+
+sub expand_filename {
+    my $path = shift;
+    my $home_dir = sub { my $p = getpw($_[0]) or die "$_[0] is not a valid username\n";
+                         return $p->dir();
+                       };
+    $path =~ s{^~(?=/|$)}{ $ENV{HOME} ? "$ENV{HOME}" : $home_dir->( $< ) }e
+          or $path =~ s{^~(.+?)(?=/|$)}{ $home_dir->( $1 ) }e;
+    return $path;
 }
 
 my @package_repos = ();

@@ -33,9 +33,6 @@ my $TERM:shared=0;
 # Prevents double detach attempts
 my $DETACHING:shared;
 
-# Prevents main thread response to "^C" be blocked by DETACHING
-my $SUDOV_LOCK:shared;
-
 # Flag to inform main thread update pkgdeps
 my $dirty:shared=0;
 
@@ -806,11 +803,8 @@ sub build_package {
 
     my @args = ();
     my @args_inc = ();
-    {
-        lock ($SUDOV_LOCK);
-        if ($TERM == 1 || my_system("sudo -v") != 0) {
-            return -1;
-        }
+    if ($TERM == 1) {
+        return -1;
     }
     push @args, "sudo -E $virtualenv/usr/bin/build";
     if ($arch ne "i586" ) {
@@ -1114,14 +1108,15 @@ $SIG{'INT'} = $SIG{'TERM'} = sub {
 };
 
 $SIG{'ALRM'} = sub {
-    {
-        lock ($SUDOV_LOCK);
-        my_system("sudo -v");
+    if (my_system("sudo -v") != 0) {
+        error("failed to request passwd")
+    } else {
+        alarm(SUDOV_PERIOD);
     }
-    alarm(SUDOV_PERIOD);
 };
 
-alarm(SUDOV_PERIOD);
+# trigger 'ALRM' immediately
+kill 'ALRM', $$;
 
 while (! $TERM) {
     my @order = ();

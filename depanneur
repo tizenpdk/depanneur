@@ -370,7 +370,9 @@ sub gbs_export {
     my ($base, $spec) = @_;
     my @args = ();
     my $cmd;
-    push @args, "gbs export";
+    push @args, "gbs";
+    push @args, "--debug" if ($debug);
+    push @args, "export";
     push @args, "$base";
     push @args, "-o $pkg_path";
     push @args, "--spec $spec";

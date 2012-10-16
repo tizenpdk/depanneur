@@ -107,9 +107,7 @@ my $MAX_THREADS = 1;
 my $extra_packs = "";
 my $ccache = 0;
 
-my @tobuild = ();
 my @tofind = ();
-my @final = ();
 my %to_build = ();
 my %pkgdeps = ();
 my @running :shared = ();
@@ -261,6 +259,10 @@ sub expand_filename {
     return $path;
 }
 
+if ($incremental == 1 && $style ne 'git') {
+    error("incremental build only support git style packages");
+}
+
 my @package_repos = ();
 my $Config;
 if (-e $config_filename) {
@@ -361,6 +363,7 @@ sub obs_wanted {
 
 sub fill_packs_from_obs {
     my $name = shift;
+    # exclude spec file that in .osc subdirs
     $name =~ m/\.osc/ || push(@packs, $name);
 }
 
@@ -455,7 +458,7 @@ sub clean_cache {
 sub query_git_commit_rev {
     my ($base, $commit_id) = @_;
 
-    open(my $git, '-|', "git --git-dir $base/.git rev-parse $commit_id") || 
+    open(my $git, '-|', "git --git-dir $base/.git rev-parse $commit_id") ||
         die "query git commit reversion($commit_id) failed: $!";
     my $rev = readline($git);
     close($git);
@@ -509,13 +512,25 @@ sub prepare_git {
             return;
         }
     }
-    push(@packs, "$pkg_path/$cache_key/$spec_file");
+    push(@packs, {
+        filename => "$pkg_path/$cache_key/$spec_file",
+        project_base_path => $base,
+    });
 }
 
 sub parse_packs {
     my ($config, @packs) = @_;
     my %packs = ();
-    foreach my $spec (@packs) {
+    foreach my $spec_ref (@packs) {
+        my $spec;
+        my $base;
+        if (ref($spec_ref) eq "HASH") {
+            # project_base_path set in sub prepare_git()
+            $spec = $spec_ref->{filename};
+            $base = $spec_ref->{project_base_path};
+        } else {
+            $spec = $spec_ref;
+        }
         my $pack = Build::Rpm::parse($config, $spec);
         if ( ( $pack->{'exclarch'} ) &&  ( ! grep $_ eq $archs[0], @{$pack->{'exclarch'}} ) ) {
             debug("arch not compatible");
@@ -535,7 +550,10 @@ sub parse_packs {
             release => $release,
             deps => @buildrequires,
             subpacks => @subpacks,
-            filename => $spec
+            filename => $spec,
+        };
+        if ($base) {
+            $packs{$name}{project_base_path} = $base;
         }
     }
     return %packs;
@@ -865,7 +883,8 @@ sub build_package {
         } else {
             info("build directory does not exist");
         }
-        my $mount = "sudo mount -o bind $package_path $scratch/home/abuild/rpmbuild/BUILD/$name-$version";
+        my $project_base_path = $to_build{$name}->{project_base_path};
+        my $mount = "sudo mount -o bind $project_base_path $scratch/home/abuild/rpmbuild/BUILD/$name-$version";
         my_system($mount);
         if ($run_configure == 1 ) {
             push @args_inc, "--define '%configure echo'";
@@ -997,6 +1016,7 @@ if ($binarylist ne "" && -e $binarylist ) {
     chomp(@bins);
     close($file);
     my @alldeps = ();
+    my @tobuild = ();
     foreach my $b (@bins) {
         next if $b eq "";
         my $found = 0;
@@ -1058,9 +1078,17 @@ if ($binarylist ne "" && -e $binarylist ) {
         print " $p, ";
     }
     print "\n";
+    my @final;
     foreach my $name (@tobuild) {
         my $fn = $packs{$name}->{filename};
-        push(@final, $fn);
+        if (exists $packs{$name}{project_base_path}) {
+            push(@final, {
+                filename => $fn,
+                project_base_path => $packs{$name}{project_base_path},
+            });
+        } else {
+            push(@final, $fn);
+        }
     }
     %to_build = parse_packs($config, @final);
 } elsif ( $binarylist ne "") {
@@ -1069,8 +1097,7 @@ if ($binarylist ne "" && -e $binarylist ) {
     %to_build = %packs
 }
 
-if ($incremental == 1 && ! -d "$package_path/.git") {
-    # if $package_path/.git exists, one package found for building
+if ($incremental == 1 && scalar(keys %to_build) > 1) {
     error("incremental build only support building one package");
 }
 

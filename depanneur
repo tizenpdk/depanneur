@@ -32,6 +32,9 @@ my $TERM:shared=0;
 # Prevents double detach attempts
 my $DETACHING:shared;
 
+# Prevents main thread response to "^C" be blocked by DETACHING
+my $SUDOV_LOCK:shared;
+
 # Flag to inform main thread update pkgdeps
 my $dirty:shared=0;
 
@@ -789,7 +792,7 @@ sub build_package {
     my @args = ();
     my @args_inc = ();
     {
-        lock ($DETACHING);
+        lock ($SUDOV_LOCK);
         if ($TERM == 1 || my_system("sudo -v") != 0) {
             return -1;
         }

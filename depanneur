@@ -492,7 +492,8 @@ sub prepare_git {
     my $current_rev = '';
 
     if (! -e "$base/.git") {
-        debug("not a git repo: $base/.git!!");
+        warning("not a git repo: $base/.git!!");
+        return;
     } else {
         my $commit_id;
         if ($commit eq "") {

@@ -263,6 +263,9 @@ sub expand_filename {
 if ($incremental == 1 && $style ne 'git') {
     error("incremental build only support git style packages");
 }
+if ($style ne 'git' && $style ne 'obs') {
+    error("style should be 'git' or 'obs'");
+}
 
 my @package_repos = ();
 my $Config;
@@ -323,7 +326,7 @@ mkdir_p "$localrepo/$dist/$arch/logs/success";
 mkdir_p "$localrepo/$dist/$arch/logs/fail";
 mkdir_p($cache_path);
 
-my @packs = @ARGV;
+my @packs;
 my $package_path = "";
 # FIXME
 
@@ -959,29 +962,29 @@ sub build_package {
 # MAIN
 info("start building packages from: " . $package_path . " ($style)");
 
-if ($buildall || @packs == 0 ) {
-    if ($style eq "git") {
+if ($style eq 'git') {
+    my @specs = @ARGV;
+    if ($buildall || @specs == 0) {
         File::Find::find({wanted => \&git_wanted}, $package_path );
         if (@original_specs > 1 && ! $commit eq ""){
             error("--commit option can't be specified with multiple packages");
         }
         if (@original_specs == 0) {
-            error("No source package found at $path");
+            error("No source package found at $package_path");
         }
-    } elsif ($style eq "obs") {
-        File::Find::find({wanted => \&obs_wanted}, $package_path );
+        push @specs, @original_specs;
+    }
+    info("prepare sources...");
+    foreach my $sp (@specs) {
+        prepare_git($config, $sp);
     }
 } else {
-    if (@packs == 0 && $path eq "") {
-        error("Please provide a list of packages to build.");
+    @packs = @ARGV;
+    if ($buildall || @packs == 0) {
+        File::Find::find({wanted => \&obs_wanted}, $package_path );
     }
 }
-
-info("prepare sources...");
-foreach my $sp (@original_specs) {
-    prepare_git($config, $sp);
-}
-
+error("no spec files to build.\n") if (@packs == 0);
 
 info("retrieving repo metadata...");
 my $repos_setup = 1;

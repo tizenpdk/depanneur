@@ -118,6 +118,7 @@ my @original_specs = ();
 my @cleaned : shared = ();
 my %errors :shared;
 my %expansion_errors = ();
+my @export_errors;
 my %tmp_expansion_errors = ();
 my $packages_built :shared  = 0;
 my %workers = ();
@@ -431,7 +432,10 @@ sub write_cache {
     my ($cache_key, $cache_val, $base, $spec) = @_;
     my $cache_fname = "$cache_path/$cache_key";
 
-    return if gbs_export($base, $spec) != 0;
+    if (gbs_export($base, $spec) != 0) {
+        push(@export_errors, $cache_key);
+        return;
+    }
 
     my $pattern = "$localrepo/$dist/src/SRPMS/$cache_key.*.rpm";
     my @binaries = glob $pattern;
@@ -1240,22 +1244,32 @@ if ($packages_built) {
     createrepo ($arch, $dist);
 }
 
-if (%errors || %expansion_errors) {
-    my $error_pkgs;
-    if (%errors) {
-        $error_pkgs = "";
-        foreach my $pkg (keys %errors) {
-            $error_pkgs .= "$pkg: $errors{$pkg}\n";
-        }
-        warning("the following packages failed to build due to rpmbuild issue:\n$error_pkgs");
+if (%errors || %expansion_errors || @export_errors) {
+    my $msg = "*** Error Summary ***\n";
+
+    if (@export_errors) {
+        $msg .= "=== the following packages failed to build because export " .
+            "source files to build environment failed ===\n";
+        $msg .= join("\n", @export_errors) . "\n";
+        $msg .= "\n";
     }
     if (%expansion_errors) {
-        $error_pkgs = "";
+        my $error_pkgs = "";
         foreach my $pkg (keys %expansion_errors) {
             $error_pkgs .= "$pkg:\n  " . join("\n  ", @{$expansion_errors{$pkg}}) . "\n";
         }
-        warning("the following packages failed to build due to missing build dependencies:\n$error_pkgs");
+        $msg .= "=== the following packages failed to build due to missing " .
+            "build dependencies ===\n$error_pkgs\n";
     }
+    if (%errors) {
+        my $error_pkgs = "";
+        foreach my $pkg (keys %errors) {
+            $error_pkgs .= "$pkg: $errors{$pkg}\n";
+        }
+        $msg .= "=== the following packages failed to build due to rpmbuild " .
+            "issue ===\n$error_pkgs";
+    }
+    error($msg);
 }
 
 exit 0

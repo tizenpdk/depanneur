@@ -23,7 +23,7 @@ use File::Basename;
 use URI;
 use POSIX ":sys_wait_h";
 use File::Glob ':glob';
-use User::pwent;
+use User::pwent qw(getpw);
 # Global vars
 
 

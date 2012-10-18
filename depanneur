@@ -109,7 +109,10 @@ my $ccache = 0;
 
 my @tofind = ();
 my %to_build = ();
+my %repo = ();
 my %pkgdeps = ();
+my %pkgddeps = (); # direct dependency dict
+my %visit    = ();
 my @running :shared = ();
 my @done :shared = ();
 my @skipped = ();
@@ -567,13 +570,11 @@ sub parse_packs {
     return %packs;
 }
 
-sub expand_deps {
-    my $spec = shift;
+sub refresh_repo {
     my $rpmdeps = "$order_dir/.repo.cache";
     my (%fn, %prov, %req);
 
     my %packs;
-    my %repo;
     my %ids;
 
     my %packs_arch;
@@ -626,10 +627,7 @@ sub expand_deps {
       $packs{$_} ||= "$_.$arch" for @{$packs_arch{$arch} || []};
     }
 
-    my $cf = Build::read_config_dist($dist, $archpath, $dist_configs);
-    $cf->{'warnings'} = 1;
-
-    my $dofileprovides = %{$cf->{'fileprovides'}};
+    my $dofileprovides = %{$config->{'fileprovides'}};
 
     for my $pack (keys %packs) {
       my $r = {};
@@ -660,6 +658,11 @@ sub expand_deps {
       $r->{'requires'} = \@re;
       $repo{$pack} = $r;
     }
+
+}
+
+sub expand_deps {
+    my $spec = shift;
     my ($packname, $packvers, $subpacks, @packdeps);
     $subpacks = [];
 
@@ -672,7 +675,7 @@ sub expand_deps {
           'subpacks' => [],
         };
       } else {
-        $d = Build::parse($cf, $spec);
+        $d = Build::parse($config, $spec);
       }
       $packname = $d->{'name'};
       $packvers = $d->{'version'};
@@ -680,12 +683,34 @@ sub expand_deps {
       @packdeps = @{$d->{'deps'} || []};
     }
 
-    Build::readdeps($cf, undef, \%repo);
+    Build::readdeps($config, undef, \%repo);
 
     #######################################################################
     my @extradeps = ();
-    my @bdeps = Build::get_build($cf, $subpacks, @packdeps, @extradeps);
+    my @bdeps = Build::get_build($config, $subpacks, @packdeps, @extradeps);
 
+    return @bdeps;
+}
+
+# get direct dependencies of specified package
+sub get_deps {
+    my $spec = shift;
+    my @bdeps;
+    my @packdeps;
+    my $d = Build::parse($config, $spec);
+
+    @packdeps = @{$d->{'deps'} || []};
+    foreach my $pack (@packdeps) {
+        my $pkg;
+        my $found = 0;
+        foreach my $pkg (keys %repo) {
+            my @prov = @{$repo{$pkg}->{'provides'}};
+            if (grep $_ eq $pack, @prov ){
+                push (@bdeps, $pkg);
+                last;
+            }
+        }
+    }
     return @bdeps;
 }
 
@@ -776,6 +801,84 @@ sub update_pkgdeps
             $pkgdeps{$name} = [@deps];
         }
     }
+}
+
+sub update_pkgddeps {
+    foreach my $name (keys %to_build) {
+        # Skip expansion error packages
+        next if (exists $tmp_expansion_errors{$name});
+        if(! (grep $_ eq $name, @skipped)) {
+            my $fn = $to_build{$name}->{filename};
+            my @bdeps = get_deps($fn);
+            my @deps;
+            foreach my $depp (@bdeps) {
+                my $so = source_of($depp, %to_build);
+                if (defined($so) && $name ne $so
+                    && (! grep($_ eq $so, @skipped))
+                    && (! grep($_ eq $so, @deps))
+                    && (! exists $tmp_expansion_errors{$so})) {
+                    push (@deps, $so);
+                }
+            }
+            $pkgddeps{$name} = [@deps]
+        }
+    }
+}
+
+sub find_circle {
+    my (@stack) = @_;
+    my $curpkg = $stack[$#stack];
+
+    return 0 if (exists $tmp_expansion_errors{$curpkg});
+
+    my @deps = @{$pkgddeps{$curpkg}};
+    my $dep;
+
+    foreach my $dep (@deps) {
+        if ($visit{$dep} == 1 && ! (grep $_ eq $dep, @stack)){
+            next;
+        }
+        $visit{$dep} = 1;
+        if (grep $_ eq $dep, @stack){
+            my @circle = ();
+            push @circle, $dep;
+            while (@stack) {
+                my $cur = pop @stack;
+                unshift @circle, $cur;
+                last if ($cur eq $dep);
+            }
+            warning ("circle found: " . join("->", @circle));
+            return 1;
+        } else {
+            push (@stack, $dep);
+            return 1 if (find_circle(@stack) == 1);
+            pop @stack;
+        }
+    }
+
+    return 0;
+}
+
+sub check_circle {
+    my $pkg;
+    my $reset_visit = sub {
+        for my $pkg (keys %pkgddeps) {
+            # Skip expansion error packages
+            next if (exists $tmp_expansion_errors{$pkg});
+            $visit{$pkg} = 0;
+        }
+    };
+    for $pkg (keys %pkgddeps) {
+        my @visit_stack;
+        &$reset_visit();
+        push (@visit_stack, $pkg);
+        $visit{$pkg} = 1;
+        if (find_circle(@visit_stack) == 1) {
+            return 1;
+        }
+    }
+
+    return 0;
 }
 
 sub worker_thread {
@@ -1134,7 +1237,27 @@ foreach my $name (keys %to_build) {
 }
 
 # Create & Update package dependency
+refresh_repo();
 update_pkgdeps();
+update_pkgddeps();
+
+if (check_circle() == 1) {
+    info("circle found, exit...");
+    exit 1;
+}
+
+if ($debug) {
+    my $pkg;
+    info("package dependency:")
+    for $pkg (keys %pkgddeps) {
+        print "$pkg:";
+        my $i;
+        for $i (0 .. $#{$pkgddeps{$pkg}}) {
+            print "$pkgddeps{$pkg}[$i] ";
+        }
+        print "\n";
+    }
+}
 
 # Signal handling
 $SIG{'INT'} = $SIG{'TERM'} = sub {
@@ -1160,7 +1283,14 @@ while (! $TERM) {
     {
         lock($DETACHING);
         if ($dirty) {
+            refresh_repo();
             update_pkgdeps();
+            update_pkgddeps();
+            if (check_circle() == 1) {
+                info("circle found, exit...");
+                exit 1;
+            }
+
             $dirty = 0;
         }
         foreach my $name (keys %to_build) {

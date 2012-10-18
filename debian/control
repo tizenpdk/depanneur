@@ -9,7 +9,7 @@ Homepage: http://www.tizen.org
 Package: depanneur
 Architecture: all
 Depends: ${perl:Depends},
- build (>= 2012.08.10-1),
+ build (>= 2012.10.10),
  libyaml-perl,
  createrepo (>= 0.9.8)
 Description: Manages and executes the builds using the obs-build script.

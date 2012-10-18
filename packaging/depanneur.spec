@@ -8,7 +8,7 @@ Source0:        %{name}_%{version}.tar.gz
 
 Requires:       createrepo >= 0.9.8
 Requires:       perl(YAML)
-Requires:       build >= 2012.08.10
+Requires:       build >= 2012.10.10
 Autoreq:        0
 %description
 The depanneur tool goes through local Git trees and evaluates packaging

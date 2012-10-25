@@ -1248,7 +1248,7 @@ if (check_circle() == 1) {
 
 if ($debug) {
     my $pkg;
-    info("package dependency:")
+    info("package dependency:");
     for $pkg (keys %pkgddeps) {
         print "$pkg:";
         my $i;

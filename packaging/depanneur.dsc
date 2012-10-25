@@ -1,6 +1,6 @@
 Format: 1.0
 Source: depanneur
-Version: 0.1
+Version: 0.2
 Binary: depanneur
 Maintainer: Zhang Qiang <qiang.z.zhang@intel.com>
 Architecture: all

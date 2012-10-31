@@ -154,7 +154,7 @@ GetOptions (
     "no-configure" => \$run_configure,
     "threads=s" => \$MAX_THREADS,
     "extra-packs=s" => \$extra_packs,
-    "ccache=s" => \$ccache,
+    "ccache" => \$ccache,
     );
 
 if ( $help ) {
@@ -517,6 +517,7 @@ sub prepare_git {
     if (!$skip || $includeall == 1) {
         # Set cache_rev as 'include-all' if --include-all specified
         my $val = ($includeall == 1) ? "include-all" : $current_rev;
+        info("start export source from: $base ...");
         unless (write_cache($cache_key, $val, $base, $spec)) {
             clean_cache($cache_key);
             debug("$pkg_name was not exported correctly");

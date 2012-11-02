@@ -79,6 +79,7 @@ my $includeall = 0;
 my $upstream_branch = "";
 my $upstream_tag = "";
 my $squash_patches_until = "";
+my $packaging_dir = "packaging";
 my $dist = "tizen";
 my $dryrun = 0;
 my $help = 0;
@@ -142,6 +143,7 @@ GetOptions (
     "upstream-branch=s" => \$upstream_branch,
     "upstream-tag=s" => \$upstream_tag,
     "squash-patches-until=s" => \$squash_patches_until,
+    "packaging-dir=s" => \$packaging_dir,
     "binary=s" => \$binarylist,
     "style=s" => \$style,
     "path=s" => \$path,
@@ -347,7 +349,7 @@ foreach my $ap (@archs) {
 }
 my $config = Build::read_config_dist($dist, $archpath, $dist_configs);
 
-if ( -d "packaging" && -d ".git" ) {
+if ( -d "$packaging_dir" && -d ".git" ) {
     $package_path = cwd();
 } else {
     if ( $path eq "" ) {
@@ -361,7 +363,7 @@ if ($binarylist ne "") {
 }
 
 sub git_wanted {
-    fill_packs_from_git($name) if /^packaging\z/s && -d $_;
+    fill_packs_from_git($name) if /^($packaging_dir)\z/s && -d $_;
 }
 
 sub obs_wanted {
@@ -414,6 +416,9 @@ sub gbs_export {
     }
     if (! $squash_patches_until eq "") {
         push @args, "--squash-patches-until=$squash_patches_until";
+    }
+    if (! $packaging_dir eq "") {
+        push @args, "--packaging-dir=$packaging_dir";
     }
     $cmd = join(" ", @args);
     return my_system($cmd);

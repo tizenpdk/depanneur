@@ -722,13 +722,21 @@ sub expand_deps {
 
 # get direct dependencies of specified package
 sub get_deps {
-    my $spec = shift;
-    my @bdeps;
-    my @packdeps;
-    my $d = Build::parse($config, $spec);
+    my $spec  = shift;
+    my @bdeps = ();
+    my @ndeps = ();
+    my @deps  = ();
+    my $d     = Build::parse($config, $spec);
 
-    @packdeps = @{$d->{'deps'} || []};
-    foreach my $pack (@packdeps) {
+    @deps = @{$d->{'deps'} || []};
+    @ndeps = grep {/^-/} @deps;
+    my %ndeps = map {$_ => 1} @ndeps;
+    @deps = grep {!$ndeps{$_}} @deps;
+    # TBD: Do we need enable this
+    # push @deps, @{$config->{'required'}};
+    @deps = Build::do_subst($config, @deps);
+    foreach my $pack (@deps) {
+        next if !defined($pack);
         my $pkg;
         my $found = 0;
         foreach my $pkg (keys %repo) {
@@ -1390,8 +1398,8 @@ while (! $TERM) {
                 ! (grep $_ eq $name, @skipped) &&
                 ! (grep $_ eq $name, @running))
             {
-                next if (! exists $pkgdeps{$name});
-                my @bdeps = @{$pkgdeps{$name}};
+                next if (! exists $pkgddeps{$name});
+                my @bdeps = @{$pkgddeps{$name}};
                 my $add = 1;
                 foreach my $depp (@bdeps) {
                     if ((! grep($_ eq $depp, @skipped)) &&

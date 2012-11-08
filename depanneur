@@ -1412,4 +1412,6 @@ if (%errors || %expansion_errors || @export_errors) {
     error($msg);
 }
 
+info("generated RPM packages can be found from local repo:\n     $localrepo/$dist");
+info("build roots located in:\n     $scratch_dir.*");
 exit 0

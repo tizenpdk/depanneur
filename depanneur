@@ -107,6 +107,7 @@ my $overwrite = 0;
 my $MAX_THREADS = 1;
 my $extra_packs = "";
 my $ccache = 0;
+my $noinit = 0;
 
 my @tofind = ();
 my %to_build = ();
@@ -157,6 +158,7 @@ GetOptions (
     "threads=s" => \$MAX_THREADS,
     "extra-packs=s" => \$extra_packs,
     "ccache" => \$ccache,
+    "noinit" => \$noinit,
     );
 
 if ( $help ) {
@@ -297,10 +299,28 @@ if (@repos) {
     }
 }
 
-my $pkg_path = "$build_root/local/sources/$dist";
-my $cache_path = "$build_root/local/sources/$dist/cache";
 my $scratch_dir = "$build_root/local/scratch.$arch";
 
+# noinit
+if ($noinit == 1) {
+    # find dist config from build root
+    my $scratch = "$scratch_dir.0";
+    if (! -e "$scratch") {
+        error("build root:$scratch does not exist. Please build without --noinit first");
+    }
+    open(my $file, '<', "$scratch/.guessed_dist") ||
+        die "read dist name failed: $!";
+    $dist = readline($file);
+    close($file);
+    chomp $dist;
+    $dist_configs= "$scratch";
+    if (! -e "$dist_configs/$dist.conf") {
+        error("build root broken caused by missing build conf. Please build without --noinit first");
+    }
+}
+
+my $pkg_path = "$build_root/local/sources/$dist";
+my $cache_path = "$build_root/local/sources/$dist/cache";
 
 sub mkdir_p {
     my $path = shift;
@@ -947,6 +967,7 @@ sub build_package {
     }
     push @args, "--uid $zuid:$zgid";
     push @args, "--jobs 4";
+    push @args, "--no-init" if ($noinit == 1);
     push @args, "--cachedir $cache_dir";
     push @args, "--dist $dist";
     push @args, "--configdir $dist_configs";
@@ -981,6 +1002,9 @@ sub build_package {
     }
 
     push @args, "--root $scratch";
+    if ($noinit == 1 && -e "$scratch/not-ready") {
+        error("build root is not ready , --noinit is not allowed");
+    }
     push @args, "--clean" if (-e "$scratch/not-ready");
     push @args, $redirect;
 
@@ -1020,6 +1044,8 @@ sub build_package {
     $cmd = join(" ", @args);
     debug($cmd);
     my $ret = my_system ($cmd);
+    # Save build config to build root for --noinit use
+    my_system("sudo cp $dist_configs/$dist.conf $scratch/$dist.conf") if ($noinit == 0);
     my_system("sudo umount $builddir") if ($incremental == 1);
     if ($ret == 0) {
         if (bsd_glob "$scratch/home/abuild/rpmbuild/SRPMS/*.rpm") {
@@ -1054,6 +1080,53 @@ sub build_package {
         return 1;
     }
 
+}
+
+sub update_repo
+{
+    #TODO: cleanup repo
+    # * remove duplicated lower version packages
+    # * others
+
+    #create repo data
+    if ($packages_built) {
+        info("updating local repo");
+        createrepo ($arch, $dist);
+    }
+
+}
+sub build_report
+{
+    if (%errors || %expansion_errors || @export_errors) {
+        my $msg = "*** Error Summary ***\n";
+
+        if (@export_errors) {
+            $msg .= "=== the following packages failed to build because export " .
+                "source files to build environment failed ===\n";
+            $msg .= join("\n", @export_errors) . "\n";
+            $msg .= "\n";
+        }
+        if (%expansion_errors) {
+            my $error_pkgs = "";
+            foreach my $pkg (keys %expansion_errors) {
+                $error_pkgs .= "$pkg:\n  " . join("\n  ", @{$expansion_errors{$pkg}}) . "\n";
+            }
+            $msg .= "=== the following packages failed to build due to missing " .
+                "build dependencies ===\n$error_pkgs\n";
+        }
+        if (%errors) {
+            my $error_pkgs = "";
+            foreach my $pkg (keys %errors) {
+                $error_pkgs .= "$pkg: $errors{$pkg}\n";
+            }
+            $msg .= "=== the following packages failed to build due to rpmbuild " .
+                "issue ===\n$error_pkgs";
+        }
+        error($msg);
+    }
+
+    info("generated RPM packages can be found from local repo:\n     $localrepo/$dist");
+    info("build roots located in:\n     $scratch_dir.*");
 }
 
 
@@ -1208,6 +1281,10 @@ if ($incremental == 1 && scalar(keys %to_build) > 1) {
     error("incremental build only support building one package");
 }
 
+if ($noinit == 1 && scalar(keys %to_build) > 1) {
+    error("--noinit build only support building one package");
+}
+
 # Prepare Workers
 for(my $w = 0; $w < $MAX_THREADS; $w++) {
     $workers{$w} = { 'state' => 'idle' , 'tid' => undef };
@@ -1218,19 +1295,35 @@ if ( ! -e "$localrepo/$dist/$arch/RPMS" ) {
     createrepo ($arch, $dist);
 }
 
-foreach my $name (keys %to_build) {
-    my $fn = $to_build{$name}->{filename};
-    my $version = $to_build{$name}->{version};
-    my $release = $to_build{$name}->{release};
-    my $pattern = "$localrepo/$dist/src/SRPMS/$name-$version-$release.*.rpm";
-    my @binaries = glob $pattern;
-    if (@binaries != 0 && ! $overwrite) {
-        info("skipping $name-$version-$release $arch ");
-        push(@skipped, $name);
-    } elsif (@binaries != 0 && $overwrite) {
-        info("*** overwriting $name-$version-$release $arch ***");
+# only check skipping & overwriting for none noinit build
+if ($noinit == 0) {
+    foreach my $name (keys %to_build) {
+        my $fn = $to_build{$name}->{filename};
+        my $version = $to_build{$name}->{version};
+        my $release = $to_build{$name}->{release};
+        my $pattern = "$localrepo/$dist/src/SRPMS/$name-$version-$release.*.rpm";
+        my @binaries = glob $pattern;
+        if (@binaries != 0 && ! $overwrite) {
+            info("skipping $name-$version-$release $arch ");
+            push(@skipped, $name);
+        } elsif (@binaries != 0 && $overwrite) {
+            info("*** overwriting $name-$version-$release $arch ***");
+        }
     }
 }
+
+# only one package need to be built, do it directly
+if ($noinit == 1 || $incremental == 1) {
+    my $ret = 0;
+    for my $pkg (keys %to_build) {
+        $ret = worker_thread($pkg, 0);
+        last;
+    }
+    update_repo();
+    build_report();
+    exit $ret;
+}
+
 
 # Create & Update package dependency
 refresh_repo();
@@ -1369,39 +1462,7 @@ while ((threads->list() > 0)) {
     sleep(1);
 }
 
-if ($packages_built) {
-    info("updating local repo");
-    createrepo ($arch, $dist);
-}
+update_repo();
+build_report();
 
-if (%errors || %expansion_errors || @export_errors) {
-    my $msg = "*** Error Summary ***\n";
-
-    if (@export_errors) {
-        $msg .= "=== the following packages failed to build because export " .
-            "source files to build environment failed ===\n";
-        $msg .= join("\n", @export_errors) . "\n";
-        $msg .= "\n";
-    }
-    if (%expansion_errors) {
-        my $error_pkgs = "";
-        foreach my $pkg (keys %expansion_errors) {
-            $error_pkgs .= "$pkg:\n  " . join("\n  ", @{$expansion_errors{$pkg}}) . "\n";
-        }
-        $msg .= "=== the following packages failed to build due to missing " .
-            "build dependencies ===\n$error_pkgs\n";
-    }
-    if (%errors) {
-        my $error_pkgs = "";
-        foreach my $pkg (keys %errors) {
-            $error_pkgs .= "$pkg: $errors{$pkg}\n";
-        }
-        $msg .= "=== the following packages failed to build due to rpmbuild " .
-            "issue ===\n$error_pkgs";
-    }
-    error($msg);
-}
-
-info("generated RPM packages can be found from local repo:\n     $localrepo/$dist");
-info("build roots located in:\n     $scratch_dir.*");
 exit 0

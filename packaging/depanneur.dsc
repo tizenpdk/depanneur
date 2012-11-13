@@ -1,10 +1,10 @@
 Format: 1.0
 Source: depanneur
-Version: 0.2
+Version: 0.2.1
 Binary: depanneur
 Maintainer: Zhang Qiang <qiang.z.zhang@intel.com>
 Architecture: all
 Standards-Version: 3.7.1
 Build-Depends: debhelper (>= 7.0.15), perl (>> 5.8.1)
 Files:
- 3afd61d945eee477dfa656227c7c43a7 11354 depanneur_0.1.tar.gz
+ 9d6dd57db65c2acb8f24049ad092bfba 14390 depanneur_0.2.1.tar.gz

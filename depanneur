@@ -56,7 +56,7 @@ if (getlogin()) {
 use Cwd qw(cwd abs_path);
 use Getopt::Long;
 use Pod::Usage;
-use File::Temp qw(tempfile);
+use File::Temp qw(tempdir);
 use Build;
 use Build::Rpm;
 use Data::Dumper;
@@ -110,6 +110,7 @@ my $ccache = 0;
 my $noinit = 0;
 my $keep_packs = 0;
 my @defines;
+my $arg_spec = "";
 
 my @tofind = ();
 my %to_build = ();
@@ -163,6 +164,7 @@ GetOptions (
     "noinit" => \$noinit,
     "keep-packs" => \$keep_packs,
     "define=s" => \@defines,
+    "spec=s" => \$arg_spec,
     );
 
 if ( $help ) {
@@ -513,7 +515,20 @@ sub prepare_git {
 
     my $packaging = dirname($spec);
     my $base = dirname($packaging);
-    my $prj = basename($base);
+
+    my $spec_file = basename($spec);
+    if ($arg_spec ne "" and $commit ne "") {
+        my $tmp_dir = abs_path(tempdir(CLEANUP=>1));
+        my $tmp_spec = "$tmp_dir/$spec_file";
+        my $without_base = $spec;
+        $without_base =~ s!$base/!!;
+        if (my_system("cd $base; git show $commit:$without_base ".
+            "> $tmp_spec 2>/dev/null") != 0) {
+            warning("failed to checkout spec file from commit: $commit");
+            return;
+        }
+        $spec = $tmp_spec;
+    }
 
     my $pack = Build::Rpm::parse($config, $spec);
     if (! exists $pack->{name} || ! exists $pack->{version} || ! exists $pack->{release}) {
@@ -524,7 +539,6 @@ sub prepare_git {
     my $pkg_version = $pack->{version};
     my $pkg_release = $pack->{release};
     my $cache_key = "$pkg_name-$pkg_version-$pkg_release";
-    my $spec_file = basename($spec);
     my $skip = 0;
     my $current_rev = '';
 
@@ -549,7 +563,7 @@ sub prepare_git {
         # Set cache_rev as 'include-all' if --include-all specified
         my $val = ($includeall == 1) ? "include-all" : $current_rev;
         info("start export source from: $base ...");
-        unless (write_cache($cache_key, $val, $base, $spec)) {
+        unless (write_cache($cache_key, $val, $base, $spec_file)) {
             clean_cache($cache_key);
             debug("$pkg_name was not exported correctly");
             return;
@@ -1155,6 +1169,10 @@ info("start building packages from: " . $package_path . " ($style)");
 
 if ($style eq 'git') {
     my @specs = @ARGV;
+    if ($arg_spec ne "") {
+        push @specs, "$path/$packaging_dir/$arg_spec";
+    }
+
     if ($buildall || @specs == 0) {
         File::Find::find({wanted => \&git_wanted}, $package_path );
         if (@original_specs > 1 && ! $commit eq ""){

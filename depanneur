@@ -1340,7 +1340,10 @@ if ($noinit == 1 || $incremental == 1) {
 
 
 # Create & Update package dependency
+info("building repo metadata ...");
 refresh_repo();
+
+info("package dependency resolving ...");
 update_pkgdeps();
 update_pkgddeps();
 

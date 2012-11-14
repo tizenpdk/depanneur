@@ -108,6 +108,7 @@ my $MAX_THREADS = 1;
 my $extra_packs = "";
 my $ccache = 0;
 my $noinit = 0;
+my $keep_packs = 0;
 
 my @tofind = ();
 my %to_build = ();
@@ -159,6 +160,7 @@ GetOptions (
     "extra-packs=s" => \$extra_packs,
     "ccache" => \$ccache,
     "noinit" => \$noinit,
+    "keep-packs" => \$keep_packs,
     );
 
 if ( $help ) {
@@ -978,6 +980,7 @@ sub build_package {
     push @args, "--uid $zuid:$zgid";
     push @args, "--jobs 4";
     push @args, "--no-init" if ($noinit == 1);
+    push @args, "--keep-packs" if ($keep_packs == 1);
     push @args, "--cachedir $cache_dir";
     push @args, "--dist $dist";
     push @args, "--configdir $dist_configs";

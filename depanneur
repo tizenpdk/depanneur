@@ -63,7 +63,7 @@ use Data::Dumper;
 use File::Basename;
 
 # "sudo -v" period
-use constant SUDOV_PERIOD => 300;
+use constant SUDOV_PERIOD => 3*60;
 
 my @threads;
 my @exclude = ();

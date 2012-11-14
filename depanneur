@@ -321,6 +321,8 @@ if ($noinit == 1) {
 
 my $pkg_path = "$build_root/local/sources/$dist";
 my $cache_path = "$build_root/local/sources/$dist/cache";
+my $rpm_repo_path = "$localrepo/$dist/$arch/RPMS";
+my $srpm_repo_path = "$localrepo/$dist/src/SRPMS";
 
 sub mkdir_p {
     my $path = shift;
@@ -468,7 +470,7 @@ sub write_cache {
         return;
     }
 
-    my $pattern = "$localrepo/$dist/src/SRPMS/$cache_key.*.rpm";
+    my $pattern = "$srpm_repo_path/$cache_key.*.rpm";
     my @binaries = glob $pattern;
     if (@binaries != 0) {
         # Remove old source rpm packages to build again, or depanneur
@@ -744,10 +746,10 @@ sub createrepo
 {
     my $arch = shift;
     my $dist = shift;
-    mkdir_p "$localrepo/$dist/src/SRPMS";
+    mkdir_p "$srpm_repo_path";
     my_system ("cd $localrepo/$dist/src && rm -rf repodata && createrepo --changelog-limit=0 -q . > /dev/null 2>&1 ") == 0 or die "createrepo failed: $?\n";
-    mkdir_p "$localrepo/$dist/$arch/RPMS";
-    my_system("touch $localrepo/$dist/$arch/RPMS");
+    mkdir_p "$rpm_repo_path";
+    my_system("touch $rpm_repo_path");
 
     my $groups = "";
     if ( -e $groupfile ) {
@@ -982,8 +984,8 @@ sub build_package {
     # Rebuild the package.
     info("*** building $name-$version-$release $arch $dist (worker: $thread) ***");
 
-    if ( -d "$localrepo/$dist/$arch/RPMS" ) {
-        push @args, "--repository $localrepo/$dist/$arch/RPMS";
+    if ( -d "$rpm_repo_path" ) {
+        push @args, "--repository $rpm_repo_path";
     }
     foreach my $r (@package_repos) {
         push @args, "--repository $r";
@@ -1049,10 +1051,10 @@ sub build_package {
     my_system("sudo umount $builddir") if ($incremental == 1);
     if ($ret == 0) {
         if (bsd_glob "$scratch/home/abuild/rpmbuild/SRPMS/*.rpm") {
-            my_system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $localrepo/$dist/src/SRPMS");
+            my_system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $srpm_repo_path");
         }
         if (bsd_glob "$scratch/home/abuild/rpmbuild/RPMS/*/*.rpm") {
-            my_system ("cp $scratch/home/abuild/rpmbuild/RPMS/*/*.rpm $localrepo/$dist/$arch/RPMS");
+            my_system ("cp $scratch/home/abuild/rpmbuild/RPMS/*/*.rpm $rpm_repo_path");
         }
         mkdir_p "$localrepo/$dist/$arch/logs/success/$name-$version-$release";
         if (-e "$scratch/.build.log") {
@@ -1062,7 +1064,7 @@ sub build_package {
         # Detach and terminate
         {
             lock($DETACHING);
-            my_system("$build_dir/createrpmdeps $localrepo/$dist/$arch/RPMS > $order_dir/.repo.cache.local ");
+            my_system("$build_dir/createrpmdeps $rpm_repo_path > $order_dir/.repo.cache.local ");
             my_system("echo D: >> $order_dir/.repo.cache.local");
             # Merge local repo catch and remote repo cache
             my_system("cat $order_dir/.repo.cache.local $order_dir/.repo.cache.remote >$order_dir/.repo.cache");
@@ -1125,7 +1127,8 @@ sub build_report
         error($msg);
     }
 
-    info("generated RPM packages can be found from local repo:\n     $localrepo/$dist");
+    info("generated RPM packages can be found from local repo:\n     $rpm_repo_path");
+    info("generated source RPM packages can be found from local repo:\n     $srpm_repo_path");
     info("build roots located in:\n     $scratch_dir.*");
 }
 
@@ -1161,8 +1164,8 @@ error("no spec files to build.\n") if (@packs == 0);
 info("retrieving repo metadata...");
 my $repos_setup = 1;
 my_system("> $order_dir/.repo.cache.local");
-if (-d "$localrepo/$dist/$arch/RPMS") {
-    my_system("$build_dir/createrpmdeps $localrepo/$dist/$arch/RPMS >> $order_dir/.repo.cache.local");
+if (-d "$rpm_repo_path") {
+    my_system("$build_dir/createrpmdeps $rpm_repo_path >> $order_dir/.repo.cache.local");
     my_system("echo D: >> $order_dir/.repo.cache.local");
 }
 my_system("> $order_dir/.repo.cache.remote");
@@ -1290,7 +1293,7 @@ for(my $w = 0; $w < $MAX_THREADS; $w++) {
     $workers{$w} = { 'state' => 'idle' , 'tid' => undef };
 }
 
-if ( ! -e "$localrepo/$dist/$arch/RPMS" ) {
+if ( ! -e "$rpm_repo_path" ) {
     info("creating repo...");
     createrepo ($arch, $dist);
 }
@@ -1301,7 +1304,7 @@ if ($noinit == 0) {
         my $fn = $to_build{$name}->{filename};
         my $version = $to_build{$name}->{version};
         my $release = $to_build{$name}->{release};
-        my $pattern = "$localrepo/$dist/src/SRPMS/$name-$version-$release.*.rpm";
+        my $pattern = "$srpm_repo_path/$name-$version-$release.*.rpm";
         my @binaries = glob $pattern;
         if (@binaries != 0 && ! $overwrite) {
             info("skipping $name-$version-$release $arch ");

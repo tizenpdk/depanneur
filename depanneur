@@ -1445,20 +1445,20 @@ while (! $TERM) {
                 }
             }
         }
+        # No candidate packges and all thread works are idle, and pkgdeps
+        # is updated, in this case, set packages in %tmp_expansion_errors
+        # as real expansion_errors, and all packages depend on these packages
+        # can not be blocked.
+        if (@order == 0 && threads->list() == 0 && $dirty == 0) {
+            @expansion_errors{keys %tmp_expansion_errors} = values %tmp_expansion_errors;
+        }
+        if (scalar(keys %to_build) == @done + @skipped +
+            scalar(keys %expansion_errors) && !$dirty) {
+            $TERM = 1;
+        }
     }
 
-    if (scalar(keys %to_build) == @done + @skipped +
-        scalar(keys %expansion_errors) && !$dirty) {
-        last;
-    }
-
-    # No candidate packges and all thread works are idle, and pkgdeps
-    # is updated, in this case, set packages in %tmp_expansion_errors
-    # as real expansion_errors, and all packages depend on these packages
-    # can not be blocked.
-    if (@order == 0 && threads->list() == 0 && $dirty == 0) {
-        @expansion_errors{keys %tmp_expansion_errors} = values %tmp_expansion_errors;
-    }
+    last if ($TERM);
 
     if (@order == 0) {
         # Waiting thread workers done, then re-calculate ready packages

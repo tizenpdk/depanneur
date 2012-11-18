@@ -936,11 +936,11 @@ sub check_circle {
 }
 
 sub worker_thread {
-    my ($name, $thread) = @_;
+    my ($name, $thread, $index) = @_;
 
     my $status;
     eval {
-        $status = build_package($name, $thread);
+        $status = build_package($name, $thread, $index);
     };
     if ($@) {
         warning("$@");
@@ -970,7 +970,7 @@ sub worker_thread {
 }
 
 sub build_package {
-    my ($name, $thread) = @_;
+    my ($name, $thread, $index) = @_;
     use vars qw(@package_repos);
 
     my $version = $to_build{$name}->{version};
@@ -1009,7 +1009,8 @@ sub build_package {
     }
 
     # Rebuild the package.
-    info("*** building $name-$version-$release $arch $dist (worker: $thread) ***");
+    my $count = scalar(keys %to_build) - scalar (@skipped);
+    info("*** [$index/$count] building $name-$version-$release $arch $dist (worker: $thread) ***");
 
     if ( -d "$rpm_repo_path" ) {
         push @args, "--repository $rpm_repo_path";
@@ -1353,7 +1354,7 @@ if ($noinit == 0) {
 if ($noinit == 1 || $incremental == 1) {
     my $ret = 0;
     for my $pkg (keys %to_build) {
-        $ret = worker_thread($pkg, 0);
+        $ret = worker_thread($pkg, 0, 1);
         last;
     }
     update_repo();
@@ -1488,9 +1489,14 @@ while (! $TERM) {
             last if (! $job);
 
             my $worker = find_idle();
-            my $thr = threads->create(\&worker_thread, $job, $worker);
+            my $index;
+            {
+                lock($DETACHING);
+                push (@running, $job);
+                $index = scalar(@done) + scalar(@running);
+            }
+            my $thr = threads->create(\&worker_thread, $job, $worker, $index);
             my $tid = $thr->tid();
-            push (@running, $job);
             set_busy($worker, $tid);
         }
     }

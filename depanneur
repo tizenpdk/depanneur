@@ -109,6 +109,7 @@ my $extra_packs = "";
 my $ccache = 0;
 my $noinit = 0;
 my $keep_packs = 0;
+my @defines;
 
 my @tofind = ();
 my %to_build = ();
@@ -161,6 +162,7 @@ GetOptions (
     "ccache" => \$ccache,
     "noinit" => \$noinit,
     "keep-packs" => \$keep_packs,
+    "define=s" => \@defines,
     );
 
 if ( $help ) {
@@ -1052,6 +1054,9 @@ sub build_package {
         push @args, "--no-init";
         @args = grep { $_ ne "--clean"} @args;
         push @args, "--short-circuit --stage=\"-bs\"";
+    }
+    for my $define (@defines) {
+        push @args, "--define '$define'";
     }
 
     $cmd = join(" ", @args);

@@ -273,6 +273,39 @@ sub expand_filename {
     return $path;
 }
 
+sub is_archive_filename {
+    my $basename = shift;
+    my @arhive_formats = ('tar', 'zip');
+    my %archive_ext_aliases = ( 'tgz' => ['tar', 'gzip' ],
+                                'tbz2'=> ['tar', 'bzip2'],
+                                'tlz' => ['tar', 'lzma' ],
+                                'txz' => ['tar', 'xz'   ]
+                               );
+    my %compressor_opts = ( 'gzip'  => [['-n'], 'gz'  ],
+                            'bzip2' => [[],     'bz2' ],
+                            'lzma'  => [[],     'lzma'],
+                            'xz'    => [[],     'xz'  ]
+                           );
+
+    my @split = split(/\./, $basename);
+    if (scalar(@split) > 1) {
+        if (exists $archive_ext_aliases{$split[-1]}) {
+            return 1;
+        } elsif (grep($_ eq $split[-1], @arhive_formats)) {
+            return 1;
+        } else {
+            foreach my $value (values %compressor_opts) {
+                if ($value->[1] eq $split[-1] && scalar(@split) > 2 &&
+                    grep($_ eq $split[-2], @arhive_formats)){
+                    return 1;
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
 if ($incremental == 1 && $style ne 'git') {
     error("incremental build only support git style packages");
 }
@@ -602,6 +635,20 @@ sub parse_packs {
         my $release = $pack->{release};
         my @buildrequires = $pack->{deps};
         my @subpacks = $pack->{subpacks};
+        my @sources = ();
+        for my $src (keys %{$pack}) {
+            next if $src !~ /source/;
+            next if (is_archive_filename($pack->{$src}) == 0);
+            push @sources, $src;
+        }
+        my @sorted =  sort {
+            my $l = ($a =~ /source(\d*)/)[0];
+            $l = -1 if ($l eq "");
+            my $r = ($b =~ /source(\d*)/)[0];
+            $r = -1 if ($r eq "");
+            int($l) <=> int($r);
+        } @sources;
+
         if ( (grep $_ eq $name, @exclude) ) {
             next;
         }
@@ -613,6 +660,11 @@ sub parse_packs {
             subpacks => @subpacks,
             filename => $spec,
         };
+
+        if (@sorted) {
+            $packs{$name}->{source} = basename($pack->{shift @sorted});
+        }
+
         if ($base) {
             $packs{$name}{project_base_path} = $base;
         }
@@ -981,7 +1033,7 @@ sub build_package {
     my $spec_name = basename($to_build{$name}->{filename});
     my $pkg_path = "$build_root/local/sources/$dist/$name-$version-$release";
     my $srpm_filename = "";
-    if ( $style eq "git" ) {
+    if ( $style eq "git" && $incremental == 0 ) {
         $srpm_filename = "$pkg_path/$spec_name";
     } else {
         $srpm_filename = $to_build{$name}->{filename};
@@ -1040,28 +1092,31 @@ sub build_package {
     }
     push @args, "--clean" if (-e "$scratch/not-ready");
     push @args, $redirect;
+    for my $define (@defines) {
+        push @args, "--define '$define'";
+    }
 
     my $cmd = "";
     my $builddir = "$scratch/home/abuild/rpmbuild/BUILD/$name-$version";
+    my $source_tar = "";
+    if (exists $to_build{$name}->{source}) {
+        $source_tar = "$to_build{$name}->{project_base_path}/$packaging_dir/$to_build{$name}->{source}";
+    }
     if ($incremental == 1) {
         info("doing incremental build");
         @args_inc = @args;
         my $buildcmd = "";
         if ( ! -d "$builddir" || grep($_ eq "--clean", @args_inc)){
             debug("Build directory does not exist");
-            push @args_inc, "--stage=\"-bp\"";
+            push @args_inc, "--no-build";
             push @args_inc, "--clean" if (! grep($_ eq "--clean", @args_inc));
             $cmd = join(" ", @args_inc);
             return -1 if (my_system($cmd) != 0);
         } else {
             debug("build directory exists");
         }
-        my $project_base_path = $to_build{$name}->{project_base_path};
-        if (! -e "$builddir") {
-            my_system("sudo mkdir -p $builddir");
-        }
-        my $mount = "sudo mount -o bind $project_base_path $builddir";
-        my_system($mount);
+
+        # More incremental options
         if ($run_configure == 1 ) {
             push @args, "--define '%configure echo'";
             push @args, "--define '%reconfigure echo'";
@@ -1072,17 +1127,30 @@ sub build_package {
         push @args, "--no-init";
         @args = grep { $_ ne "--clean"} @args;
         push @args, "--short-circuit --stage=\"-bs\"";
-    }
-    for my $define (@defines) {
-        push @args, "--define '$define'";
+
+        my $project_base_path = $to_build{$name}->{project_base_path};
+        if (! -e "$builddir") {
+            my_system("sudo mkdir -p $builddir");
+        }
+        my $mount = "sudo mount -o bind $project_base_path $builddir";
+        my_system($mount);
+        my $tmp_dir = abs_path(tempdir(CLEANUP=>1));
+        my_system("tar -zcf $source_tar $tmp_dir") if ($source_tar ne "");
     }
 
     $cmd = join(" ", @args);
     debug($cmd);
     my $ret = my_system ($cmd);
+
+    if ($incremental == 1) {
+        #FIXME: more safe way needed to remove this fake source tar
+        my_system("rm -f $source_tar") if ($source_tar ne "");
+        my_system("sudo umount $builddir");
+    }
+
     # Save build config to build root for --noinit use
     my_system("sudo cp $dist_configs/$dist.conf $scratch/$dist.conf") if ($noinit == 0);
-    my_system("sudo umount $builddir") if ($incremental == 1);
+
     if ($ret == 0) {
         if (bsd_glob "$scratch/home/abuild/rpmbuild/SRPMS/*.rpm") {
             my_system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $srpm_repo_path");
@@ -1187,9 +1255,22 @@ if ($style eq 'git') {
         }
         push @specs, @original_specs;
     }
-    info("prepare sources...");
-    foreach my $sp (@specs) {
-        prepare_git($config, $sp);
+    if ($incremental == 1) {
+        # No need to prepare git for incremental build
+        foreach my $sp (@specs) {
+            my $packaging = dirname($sp);
+            my $base = dirname($packaging);
+            push(@packs, {
+                    filename => "$sp",
+                    project_base_path => $base,
+                    });
+        }
+    } else {
+        info("prepare sources...");
+        foreach my $sp (@specs) {
+            prepare_git($config, $sp);
+        }
+
     }
 } else {
     @packs = @ARGV;
@@ -1336,8 +1417,8 @@ if ( ! -e "$rpm_repo_path" ) {
     createrepo ($arch, $dist);
 }
 
-# only check skipping & overwriting for none noinit build
-if ($noinit == 0) {
+# only check skipping & overwriting for none noinit/incremental build
+if ($noinit == 0 && $incremental == 0) {
     foreach my $name (keys %to_build) {
         my $fn = $to_build{$name}->{filename};
         my $version = $to_build{$name}->{version};

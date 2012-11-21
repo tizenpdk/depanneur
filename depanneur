@@ -328,7 +328,7 @@ if ($noinit == 1) {
 my $pkg_path = "$build_root/local/sources/$dist";
 my $cache_path = "$build_root/local/sources/$dist/cache";
 my $rpm_repo_path = "$localrepo/$dist/$arch/RPMS";
-my $srpm_repo_path = "$localrepo/$dist/src/SRPMS";
+my $srpm_repo_path = "$localrepo/$dist/$arch/SRPMS";
 
 sub mkdir_p {
     my $path = shift;
@@ -358,6 +358,8 @@ mkdir_p($order_dir);
 mkdir_p "$localrepo/$dist/$arch/logs/success";
 mkdir_p "$localrepo/$dist/$arch/logs/fail";
 mkdir_p($cache_path);
+mkdir_p($rpm_repo_path);
+mkdir_p($srpm_repo_path);
 
 my @packs;
 my $package_path = "";
@@ -476,12 +478,11 @@ sub write_cache {
         return;
     }
 
-    my $pattern = "$srpm_repo_path/$cache_key.*.rpm";
-    my @binaries = glob $pattern;
-    if (@binaries != 0) {
+    my $src_rpm = "$srpm_repo_path/$cache_key.src.rpm";
+    if (-f $src_rpm) {
         # Remove old source rpm packages to build again, or depanneur
         # will skip packages with src.rpm exists
-        my_system("rm -f $pattern");
+        my_system("rm -f $src_rpm");
     }
 
     open(my $rev1, "+>", $cache_fname) ||
@@ -772,9 +773,8 @@ sub createrepo
 {
     my $arch = shift;
     my $dist = shift;
-    mkdir_p "$srpm_repo_path";
-    my_system ("cd $localrepo/$dist/src && rm -rf repodata && createrepo --changelog-limit=0 -q . > /dev/null 2>&1 ") == 0 or die "createrepo failed: $?\n";
-    mkdir_p "$rpm_repo_path";
+
+    my_system("touch $srpm_repo_path");
     my_system("touch $rpm_repo_path");
 
     my $groups = "";
@@ -1339,13 +1339,15 @@ if ($noinit == 0) {
         my $fn = $to_build{$name}->{filename};
         my $version = $to_build{$name}->{version};
         my $release = $to_build{$name}->{release};
-        my $pattern = "$srpm_repo_path/$name-$version-$release.*.rpm";
-        my @binaries = glob $pattern;
-        if (@binaries != 0 && ! $overwrite) {
-            info("skipping $name-$version-$release $arch ");
-            push(@skipped, $name);
-        } elsif (@binaries != 0 && $overwrite) {
-            info("*** overwriting $name-$version-$release $arch ***");
+
+        my $src_rpm = "$srpm_repo_path/$name-$version-$release.src.rpm";
+        if (-f $src_rpm) {
+            if ($overwrite) {
+                info("*** overwriting $name-$version-$release $arch ***");
+            } else {
+                info("skipping $name-$version-$release $arch ");
+                push(@skipped, $name);
+            }
         }
     }
 }

@@ -1355,6 +1355,24 @@ if ($noinit == 0) {
     }
 }
 
+
+# Signal handling
+$SIG{'INT'} = $SIG{'TERM'} = sub {
+        print("^C captured\n");
+        $TERM=1;
+};
+
+$SIG{'ALRM'} = sub {
+    if (my_system("sudo -v") != 0) {
+        error("sudo: failed to request passwd")
+    } else {
+        alarm(SUDOV_PERIOD);
+    }
+};
+
+# trigger 'ALRM' immediately
+kill 'ALRM', $$;
+
 # only one package need to be built, do it directly
 if ($noinit == 1 || $incremental == 1) {
     my $ret = 0;
@@ -1393,23 +1411,6 @@ if ($debug) {
         print "\n";
     }
 }
-
-# Signal handling
-$SIG{'INT'} = $SIG{'TERM'} = sub {
-        print("^C captured\n");
-        $TERM=1;
-};
-
-$SIG{'ALRM'} = sub {
-    if (my_system("sudo -v") != 0) {
-        error("failed to request passwd")
-    } else {
-        alarm(SUDOV_PERIOD);
-    }
-};
-
-# trigger 'ALRM' immediately
-kill 'ALRM', $$;
 
 while (! $TERM) {
     my @order = ();

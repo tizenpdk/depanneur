@@ -1,6 +1,6 @@
 Name:           depanneur
 Summary:        Manages and executes the builds using the obs-build script.
-Version:        0.2.1
+Version:        0.3
 Release:        1
 License:        GPL-2.0+
 Group:          Development/Tools
@@ -8,7 +8,7 @@ Source0:        %{name}_%{version}.tar.gz
 
 Requires:       createrepo >= 0.9.8
 Requires:       perl(YAML)
-Requires:       tizen-build >= 2012.10.10.1
+Requires:       tizen-build >= 2012.10.10-tizen20121126
 Autoreq:        0
 %description
 The depanneur tool goes through local Git trees and evaluates packaging

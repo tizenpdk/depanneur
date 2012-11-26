@@ -1,3 +1,20 @@
+depanneur (0.3) unstable; urgency=high
+
+  * --noinit support
+  * Support build RPM packages for incremental build
+  * warning user and try again if umount failed for incremental build
+  * no need create/unpack tar ball for incremental build
+  * x86_64 support
+  * keep src rpm for each arch
+  * show build progress for multiple packages build
+  * Add --spec to support multi-spec project
+  * Add --define option to define macros for rpmbuild
+  * Modify SUDOV_PERIOD smaller (5 mins)
+  * Add more output info about building status
+  * Add --keep-packs to keep unused packages in buildroot
+
+ -- Qiang Zhang <qiang.z.zhang@intel.com>  Mon, 26 Nov 2012 10:56:15 +0800
+
 depanneur (0.2.1) unstable; urgency=high
 
   * Update dependency: depend on tizen-build >= 2012.10.10.1

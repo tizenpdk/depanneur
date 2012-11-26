@@ -1024,6 +1024,21 @@ sub worker_thread {
     return $status;
 }
 
+sub safe_umount {
+    my ($device) = @_;
+    return if (my_system("sudo umount -l $device") == 0);
+
+    warning("!!!! umount device $device failed. It may cause files lost in ".
+        "some cases. Please stop the process which is using this device and ".
+        "press any key to umount again !!!!");
+
+    <>;
+    if (my_system("sudo umount -l -f $device") != 0) {
+        warning("!!!! IMPORTANT: umount failed again, please backup your ".
+        "source code and try to umount manually !!!!");
+    }
+}
+
 sub build_package {
     my ($name, $thread, $index) = @_;
     use vars qw(@package_repos);
@@ -1145,7 +1160,7 @@ sub build_package {
     if ($incremental == 1) {
         #FIXME: more safe way needed to remove this fake source tar
         my_system("rm -f $source_tar") if ($source_tar ne "");
-        my_system("sudo umount $builddir");
+        safe_umount($builddir) if ($incremental == 1);
     }
 
     # Save build config to build root for --noinit use

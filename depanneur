@@ -627,7 +627,7 @@ sub parse_packs {
         }
         my $pack = Build::Rpm::parse($config, $spec);
         if ( ( $pack->{'exclarch'} ) &&  ( ! grep $_ eq $archs[0], @{$pack->{'exclarch'}} ) ) {
-            debug("arch not compatible");
+            warning("build arch not compatible: " . join(" ", @{$pack->{'exclarch'}}));
             next;
         }
         my $name = $pack->{name};
@@ -1413,6 +1413,8 @@ if ($binarylist ne "" && -e $binarylist ) {
 } else {
     %to_build = %packs
 }
+
+error("no available packages to build.") if (scalar (keys %to_build) == 0);
 
 if ($incremental == 1 && scalar(keys %to_build) > 1) {
     error("incremental build only support building one package");

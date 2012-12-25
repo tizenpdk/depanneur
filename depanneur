@@ -641,7 +641,7 @@ sub parse_packs {
         }
         my $pack = Build::Rpm::parse($config, $spec);
         if ( ( $pack->{'exclarch'} ) &&  ( ! grep $_ eq $archs[0], @{$pack->{'exclarch'}} ) ) {
-            warning("build arch not compatible: " . join(" ", @{$pack->{'exclarch'}}));
+            warning($pack->{name} . ": build arch not compatible: " . join(" ", @{$pack->{'exclarch'}}));
             next;
         }
         my $name = $pack->{name};

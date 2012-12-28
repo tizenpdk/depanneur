@@ -9,6 +9,9 @@ Source0:        %{name}_%{version}.tar.gz
 Requires:       createrepo >= 0.9.8
 Requires:       perl(YAML)
 Requires:       tizen-build >= 2012.10.10-tizen20121126
+%if 0%{?suse_version}
+BuildRequires:  sudo
+%endif
 Autoreq:        0
 %description
 The depanneur tool goes through local Git trees and evaluates packaging
@@ -30,4 +33,6 @@ make install DESTDIR=$RPM_BUILD_ROOT
 
 %files
 %defattr(-,root,root,-)
+%{_bindir}/depanneur_sudo
 %{_bindir}/depanneur
+%{_sysconfdir}/sudoers.d/gbs

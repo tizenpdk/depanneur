@@ -4,7 +4,7 @@ prefix=/usr
 bindir=$(prefix)/bin
 datadir=$(prefix)/share
 libdir=$(prefix)/lib
-sysconfdir=/etc
+sudodir=/etc/sudoers.d
 DESTDIR=
 
 all:
@@ -15,4 +15,12 @@ install:
 	install -m755 \
 	    depanneur  \
 	    $(DESTDIR)$(bindir)
+	install -m755 \
+	    data/depanneur_sudo  \
+	    $(DESTDIR)$(bindir)
+	install -m750 -d \
+	    $(DESTDIR)$(sudodir)
+	install -m440 \
+        data/gbs \
+        $(DESTDIR)$(sudodir)
 

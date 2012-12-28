@@ -1040,14 +1040,14 @@ sub worker_thread {
 
 sub safe_umount {
     my ($device) = @_;
-    return if (my_system("sudo umount -l $device") == 0);
+    return if (my_system("sudo depanneur_sudo umount -l $device") == 0);
 
     warning("!!!! umount device $device failed. It may cause files lost in ".
         "some cases. Please stop the process which is using this device and ".
         "press any key to umount again !!!!");
 
     <>;
-    if (my_system("sudo umount -l -f $device") != 0) {
+    if (my_system("sudo depanneur_sudo umount -l -f $device") != 0) {
         warning("!!!! IMPORTANT: umount failed again, please backup your ".
         "source code and try to umount manually !!!!");
     }
@@ -1073,7 +1073,7 @@ sub build_package {
     if ($TERM == 1) {
         return -1;
     }
-    push @args, "sudo -E $virtualenv/usr/bin/build";
+    push @args, "sudo depanneur_sudo -E $virtualenv/usr/bin/build";
     if ($arch ne "i586" ) {
         push @args, "--use-system-qemu";
     }
@@ -1159,9 +1159,9 @@ sub build_package {
 
         my $project_base_path = $to_build{$name}->{project_base_path};
         if (! -e "$builddir") {
-            my_system("sudo mkdir -p $builddir");
+            my_system("sudo depanneur_sudo mkdir -p $builddir");
         }
-        my $mount = "sudo mount -o bind $project_base_path $builddir";
+        my $mount = "sudo depanneur_sudo mount -o bind $project_base_path $builddir";
         my_system($mount);
         my $tmp_dir = abs_path(tempdir(CLEANUP=>1));
         my_system("tar -zcf $source_tar $tmp_dir") if ($source_tar ne "");
@@ -1178,7 +1178,7 @@ sub build_package {
     }
 
     # Save build config to build root for --noinit use
-    my_system("sudo cp $dist_configs/$dist.conf $scratch/$dist.conf") if ($noinit == 0);
+    my_system("sudo depanneur_sudo cp $dist_configs/$dist.conf $scratch/$dist.conf") if ($noinit == 0);
 
     if ($ret == 0) {
         if (bsd_glob "$scratch/home/abuild/rpmbuild/SRPMS/*.rpm") {
@@ -1190,7 +1190,7 @@ sub build_package {
         mkdir_p "$success_logs_path/$name-$version-$release";
         if (-e "$scratch/.build.log") {
             my_system ("cp $scratch/.build.log $success_logs_path/$name-$version-$release/log");
-            my_system ("sudo rm -f $scratch/.build.log ");
+            my_system ("sudo depanneur_sudo rm -f $scratch/.build.log ");
         }
         # Detach and terminate
         {
@@ -1207,7 +1207,7 @@ sub build_package {
         mkdir_p "$fail_logs_path/$name-$version-$release";
         if ( -f "$scratch/.build.log" ) {
             my_system ("cp $scratch/.build.log $fail_logs_path/$name-$version-$release/log");
-            my_system ("sudo rm -f $scratch/.build.log");
+            my_system ("sudo depanneur_sudo rm -f $scratch/.build.log");
             warning("build failed, Leaving the logs in $fail_logs_path/$name-$version-$release/log");
         }
         return 1;
@@ -1485,7 +1485,7 @@ $SIG{'INT'} = $SIG{'TERM'} = sub {
 };
 
 $SIG{'ALRM'} = sub {
-    if (my_system("sudo echo -n") != 0) {
+    if (my_system("sudo depanneur_sudo echo -n") != 0) {
         error("sudo: failed to request passwd")
     } else {
         alarm(SUDOV_PERIOD);

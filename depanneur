@@ -79,6 +79,7 @@ my $includeall = 0;
 my $upstream_branch = "";
 my $upstream_tag = "";
 my $squash_patches_until = "";
+my $no_patch_export = 0;
 my $packaging_dir = "packaging";
 my $dist = "tizen";
 my $dryrun = 0;
@@ -148,6 +149,7 @@ GetOptions (
     "upstream-branch=s" => \$upstream_branch,
     "upstream-tag=s" => \$upstream_tag,
     "squash-patches-until=s" => \$squash_patches_until,
+    "no-patch-export" => \$no_patch_export,
     "packaging-dir=s" => \$packaging_dir,
     "binary=s" => \$binarylist,
     "style=s" => \$style,
@@ -499,6 +501,9 @@ sub gbs_export {
     }
     if (! $packaging_dir eq "") {
         push @args, "--packaging-dir=$packaging_dir";
+    }
+    if ($no_patch_export == 1) {
+        push @args, "--no-patch-export";
     }
     $cmd = join(" ", @args);
     return my_system($cmd);

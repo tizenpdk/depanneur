@@ -1066,7 +1066,7 @@ sub build_package {
     if ($TERM == 1) {
         return -1;
     }
-    push @args, "sudo depanneur_sudo -E $virtualenv/usr/bin/build";
+    push @args, "sudo depanneur_sudo $virtualenv/usr/bin/build";
     if ($arch ne "i586" ) {
         push @args, "--use-system-qemu";
     }

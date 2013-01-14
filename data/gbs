@@ -1,4 +1,3 @@
-Defaults targetpw
 ALL     ALL=(ALL) NOPASSWD:/usr/bin/depanneur_sudo
 
 Defaults env_keep += "http_proxy"

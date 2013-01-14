@@ -1,2 +1,18 @@
 #!/bin/bash
-sudo $@
+
+if [ -z "$1" ]
+then
+    echo "command must be specified for $0"
+    exit 1
+fi
+
+case $1 in
+    #commands need sudo in depanneur
+    umount|mount|mkdir|cp|rm|echo|*/usr/bin/build)
+        sudo "$@"
+        ;;
+     * )
+        echo "Don't support executing '$1' using $0"
+        exit 1
+        ;;
+esac

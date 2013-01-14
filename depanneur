@@ -406,22 +406,10 @@ my $package_path = "";
 # This arch policy comes from sat-solver:src/poolarch.c
 my %archpolicies = (
           "x86_64"      =>  ["x86_64", "i686", "i586", "i486", "i386", "noarch"],
-          "i686"        =>  ["i686", "i586", "i486", "i386", "noarch"],
-          "i586"        =>  ["i586", "i486", "i386", "noarch"],
-          "i486"        =>  ["i486", "i386", "noarch"],
-          "i386"        =>  ["i386", "noarch"],
-          "ia64"        =>  ["ia64", "i686", "i586", "i486", "i386", "noarch"],
-          "armv7tnhl"   =>  ["arvm7tnhl", "armv7thl", "armv7nhl", "armv7hl", "noarch"],
-          "armv7thl"    =>  ["armv7thl", "armv7hl", "noarch"],
-          "armv7nhl"    =>  ["armv7nhl", "armv7hl", "noarch"],
+          "i586"        =>  ["i686", "i586", "i486", "i386", "noarch"],
           "armv7hl"     =>  ["armv7hl", "noarch"],
           "armv7l"      =>  ["armv7l", "armv7el", "armv6l", "armv5tejl", "armv5tel", "armv5l", "armv4tl", "armv4l", "armv3l", "noarch"],
           "armv6l"      =>  ["armv6l", "armv5tejl", "armv5tel", "armv5l", "armv4tl", "armv4l", "armv3l", "noarch"],
-          "armv5tejl"   =>  ["armv5tejl", "armv5tel", "armv5l", "armv4tl", "armv4l", "armv3l", "noarch"],
-          "armv5tel"    =>  ["armv5tel", "armv5l", "armv4tl", "armv4l", "armv3l", "noarch"],
-          "armv5l"      =>  ["armv5l", "armv4tl", "armv4l", "armv3l", "noarch"],
-          "armv4tl"     =>  ["armv4tl", "armv4l", "armv3l", "noarch"],
-          "armv4l"      =>  ["armv4l", "armv3l", "noarch"],
         );
 
 error("$arch not support") if (not exists $archpolicies{$arch});

@@ -1078,6 +1078,7 @@ sub build_package {
     push @args, "--dist $dist";
     push @args, "--configdir $dist_configs";
     push @args, "--arch $archpath";
+    push @args, "--target $arch";
     push @args, "$srpm_filename";
     push @args, "--ccache" if ($ccache);
     if (! $extra_packs eq "") {

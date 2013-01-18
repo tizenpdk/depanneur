@@ -1071,7 +1071,9 @@ sub build_package {
         push @args, "--use-system-qemu";
     }
     push @args, "--uid $zuid:$zgid";
-    push @args, "--jobs 4";
+    my $nprocessors = int(`getconf _NPROCESSORS_ONLN`);
+    $nprocessors = 4 if ($nprocessors < 4);
+    push @args, "--jobs $nprocessors";
     push @args, "--no-init" if ($noinit == 1);
     push @args, "--keep-packs" if ($keep_packs == 1);
     push @args, "--cachedir $cache_dir";

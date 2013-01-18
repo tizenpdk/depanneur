@@ -1,3 +1,17 @@
+depanneur (0.4) unstable; urgency=high
+
+  * Refine build behavior: gbs build should not depend on local copy
+  * Use --target option for build script to build specified arch
+  * add depanneur_sudo and sudoers configure to avoid requesting passwd
+  * use the processors number instead of hard code 4 for parallel compile
+  * show package info for arch incompatible warning
+  * Add --no-patch-export option for source export
+  * supported arches clean up
+  * bug fix:
+    - crash if specify a non-exist specfile with --spec option
+
+ -- Qiang Zhang <qiang.z.zhang@intel.com>  Wed, 23 Jan 2013 10:56:15 +0800
+
 depanneur (0.3) unstable; urgency=high
 
   * --noinit support

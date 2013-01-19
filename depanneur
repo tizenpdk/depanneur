@@ -56,7 +56,7 @@ if (getlogin()) {
 use Cwd qw(cwd abs_path);
 use Getopt::Long;
 use Pod::Usage;
-use File::Temp qw(tempdir);
+use File::Temp qw/ tempfile tempdir /;
 use Build;
 use Build::Rpm;
 use Data::Dumper;
@@ -74,7 +74,7 @@ my $style = "git";
 my $clean = 0;
 my $binarylist = "";
 my $buildall = 0;
-my $commit = "";
+my $commit = "HEAD";
 my $includeall = 0;
 my $upstream_branch = "";
 my $upstream_tag = "";
@@ -433,7 +433,7 @@ if ($binarylist ne "") {
 }
 
 sub git_wanted {
-    fill_packs_from_git($name) if /^($packaging_dir)\z/s && -d $_;
+    fill_packs_from_git($name) if /^\.git\z/s && -d $_;
 }
 
 sub obs_wanted {
@@ -451,16 +451,26 @@ sub fill_packs_from_git {
     my $name = shift;
     my $base = dirname($name);
     my $prj = basename($base);
-    if ( ! -e "$base/.git" ) {
-        debug("$base is not a git checkout");
-        return;
-    }
+
     if ( (grep $_ eq $prj, @exclude) ) {
         return;
     }
+
     debug("working on $base");
-    my $pattern = "$name/*.spec";
-    push(@original_specs, glob($pattern));
+    if ($includeall == 0) {
+        my (undef, $tmp_file) = tempfile(CLEANUP=>1, OPEN => 0);
+        if (my_system("cd $base; git show $commit:$packaging_dir >$tmp_file 2>/dev/null") == 0) {
+            open my $file, '<', $tmp_file or die $!;
+            while (<$file>) {
+                chomp;
+                next if $_ !~ /\.spec$/;
+                push(@original_specs, "$base/$packaging_dir/$_");
+            }
+        }
+    } else {
+        my $pattern = "$base/$packaging_dir/*.spec";
+        push(@original_specs, glob($pattern));
+    }
 }
 
 sub gbs_export {
@@ -475,7 +485,7 @@ sub gbs_export {
     push @args, "--spec $spec";
     if ($includeall == 1) {
         push @args, "--include-all";
-    } elsif ($commit ne "") {
+    } else {
         push @args, "--commit=$commit";
     }
     if (! $upstream_branch eq "") {
@@ -561,13 +571,12 @@ sub prepare_git {
     my $base = dirname($packaging);
 
     my $spec_file = basename($spec);
-    if ($arg_spec ne "" and $commit ne "") {
+    if ($includeall == 0) {
         my $tmp_dir = abs_path(tempdir(CLEANUP=>1));
         my $tmp_spec = "$tmp_dir/$spec_file";
         my $without_base = $spec;
         $without_base =~ s!$base/!!;
-        if (my_system("cd $base; git show $commit:$without_base ".
-            "> $tmp_spec 2>/dev/null") != 0) {
+        if (my_system("cd $base; git show $commit:$without_base >$tmp_spec 2>/dev/null") != 0) {
             warning("failed to checkout spec file from commit: $commit");
             return;
         }
@@ -590,14 +599,7 @@ sub prepare_git {
         warning("not a git repo: $base/.git!!");
         return;
     } else {
-        my $commit_id;
-        if ($commit eq "") {
-            $commit_id = "HEAD";
-        }else{
-            $commit_id = $commit;
-        }
-
-        $current_rev = query_git_commit_rev($base, $commit_id);
+        $current_rev = query_git_commit_rev($base, $commit);
 
         my $cached_rev = read_cache($cache_key);
         $skip = ($cached_rev eq $current_rev);
@@ -1272,7 +1274,7 @@ if ($style eq 'git') {
 
     if ($buildall || @specs == 0) {
         File::Find::find({wanted => \&git_wanted}, $package_path );
-        if (@original_specs > 1 && ! $commit eq ""){
+        if (@original_specs > 1 && $commit ne "HEAD"){
             error("--commit option can't be specified with multiple packages");
         }
         if (@original_specs == 0) {

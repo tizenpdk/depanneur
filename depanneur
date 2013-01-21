@@ -1287,6 +1287,9 @@ if ($style eq 'git') {
         foreach my $sp (@specs) {
             my $packaging = dirname($sp);
             my $base = dirname($packaging);
+            if (! -e $sp){
+                error("$sp does not exist under package:$base");
+            }
             push(@packs, {
                     filename => "$sp",
                     project_base_path => $base,

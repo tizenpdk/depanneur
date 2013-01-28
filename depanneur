@@ -1052,18 +1052,15 @@ sub safe_umount {
 sub mount_source_check {
     my $build_root = canonpath(shift);
 
-    my (undef, $tmp_file) = tempfile(CLEANUP=>1, OPEN => 0);
-    if (my_system("mount -l >$tmp_file 2>/dev/null") == 0) {
-        open my $file, '<', $tmp_file or die $!;
-        while (<$file>) {
-            chomp;
-            next if ($_ !~ /$build_root/);
-            my @mount_info= split(' ', $_);
-            if (-e $mount_info[0] and -e "$mount_info[0]/.git"){
-                error("$mount_info[0] has been mounted to $mount_info[2]. " .
-                      "Please unmount it manually to avoid being deleted " .
-                      "unexpectly.");
-            }
+    open my $file, '<', "/proc/self/mountinfo" or die $!;
+    while (<$file>) {
+        chomp;
+        next if ($_ !~ /$build_root/);
+        my @mount_info= split(' ', $_);
+        if (-e $mount_info[3] and -e "$mount_info[3]/.git"){
+            error("$mount_info[3] has been mounted to $mount_info[4]. " .
+                  "Please unmount it manually to avoid being deleted " .
+                  "unexpectly.");
         }
     }
 }

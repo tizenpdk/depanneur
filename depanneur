@@ -24,6 +24,7 @@ use URI;
 use POSIX ":sys_wait_h";
 use File::Glob ':glob';
 use User::pwent qw(getpw);
+use POSIX qw(sysconf);
 # Global vars
 
 
@@ -64,7 +65,7 @@ use File::Basename;
 
 # "sudo -v" period
 use constant SUDOV_PERIOD => 3*60;
-
+use constant SC_NPROCESSORS_ONLN => 84;
 my @threads;
 my @exclude = ();
 my @repos= ();
@@ -1092,9 +1093,13 @@ sub build_package {
         push @args, "--use-system-qemu";
     }
     push @args, "--uid $zuid:$zgid";
-    my $nprocessors = int(`getconf _NPROCESSORS_ONLN`);
-    $nprocessors = 4 if ($nprocessors < 4);
-    push @args, "--jobs $nprocessors";
+    my $nprocessors = 2;
+    if ($^O eq "linux") {
+        $nprocessors = int(sysconf(SC_NPROCESSORS_ONLN));
+    } else {
+        warning("depanneur only support linux platform");
+    }
+    push @args, "--jobs " . $nprocessors * 2;
     push @args, "--no-init" if ($noinit == 1);
     push @args, "--keep-packs" if ($keep_packs == 1);
     push @args, "--cachedir $cache_dir";

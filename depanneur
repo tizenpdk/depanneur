@@ -1051,17 +1051,19 @@ sub safe_umount {
 
 sub mount_source_check {
     my $build_root = canonpath(shift);
+    my @mount_list;
 
     open my $file, '<', "/proc/self/mountinfo" or die $!;
     while (<$file>) {
         chomp;
         next if ($_ !~ /$build_root/);
         my @mount_info= split(' ', $_);
-        if (-e $mount_info[3] and -e "$mount_info[3]/.git"){
-            error("$mount_info[3] has been mounted to $mount_info[4]. " .
-                  "Please unmount it manually to avoid being deleted " .
-                  "unexpectly.");
-        }
+        push @mount_list, "$mount_info[3] ==> $mount_info[4]";
+    }
+
+    if (@mount_list) {
+        error("there're mounted directories to build root. Please unmount them " .
+              "manually to avoid being deleted unexpectly:\n\t" . join("\n\t", @mount_list));
     }
 }
 

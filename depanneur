@@ -83,6 +83,8 @@ my $squash_patches_until = "";
 my $no_patch_export = 0;
 my $packaging_dir = "packaging";
 my $dist = "tizen";
+my $rdeps_build = 0;
+my $deps_build = 0;
 my $dryrun = 0;
 my $help = 0;
 my $keepgoing = 0;
@@ -120,6 +122,8 @@ my %to_build = ();
 my %repo = ();
 my %pkgdeps = ();
 my %pkgddeps = (); # direct dependency dict
+my %pkgrdeps = ();  # expanded reversed dependency dict
+my %pkgrddeps = (); # direct reversed dependency dict
 my %visit    = ();
 my @running :shared = ();
 my @done :shared = ();
@@ -155,6 +159,8 @@ GetOptions (
     "binary=s" => \$binarylist,
     "style=s" => \$style,
     "path=s" => \$path,
+    "deps"  => \$deps_build,
+    "rdeps"  => \$rdeps_build,
     "dryrun" => \$dryrun,
     "help|?" => \$help,
     "keepgoing" => \$keepgoing,
@@ -922,6 +928,44 @@ sub update_pkgdeps
     }
 }
 
+# generate topological sort sequence from global %pkgddeps
+sub get_top_order {
+    my @top_order = ();
+    my %ref = ();
+
+    for my $pack (sort keys %pkgddeps) {
+        $ref{$pack} = 0;
+    }
+
+    for my $pack (sort keys %pkgddeps) {
+        next if (! defined($pkgddeps{$pack}));
+        for (@{$pkgddeps{$pack} }) {
+            $ref{$_} += 1;
+        }
+    }
+
+    while (@top_order != scalar (keys %pkgddeps)) {
+        my @candlist = ();
+        for my $pkg (sort keys %ref) {
+            if ($ref{$pkg} == 0) {
+                push @candlist, $pkg;
+                push @top_order, $pkg;
+                delete $ref{$pkg};
+            }
+        }
+        for (@candlist) {
+            next if (! defined($pkgddeps{$_}));
+            for (@{$pkgddeps{$_} }) {
+                $ref{$_} -= 1;
+            }
+        }
+
+        error ("circle found, break!!!") if (!@candlist);
+    }
+
+    return @top_order;
+}
+
 sub update_pkgddeps {
     foreach my $name (keys %to_build) {
         # Skip expansion error packages
@@ -942,6 +986,87 @@ sub update_pkgddeps {
             $pkgddeps{$name} = [@deps]
         }
     }
+
+    for my $pack (sort keys %pkgddeps) {
+        $pkgrddeps{$pack} = [];
+    }
+
+    for my $pack (sort keys %pkgddeps) {
+        next if (! defined($pkgddeps{$pack}));
+        for (@{$pkgddeps{$pack} }) {
+            push @{$pkgrddeps{$_}}, $pack;
+        }
+    }
+
+    # Expand dependency using direct dependency dict
+    # pkgddeps  => pkgdeps
+    # pkgrddeps => pkgrdeps
+    my @top_order = get_top_order();
+
+    %pkgdeps = ();
+    %pkgrdeps = ();
+    for my $pkg (keys %pkgddeps) {
+        $pkgdeps{$pkg} = [@{$pkgddeps{$pkg}}]
+    }
+    for my $pkg (keys %pkgrddeps) {
+        $pkgrdeps{$pkg} = [@{$pkgrddeps{$pkg}}]
+    }
+
+    for my $pkg (@top_order) {
+        next if (! defined($pkgddeps{$pkg}));
+        for (@{$pkgddeps{$pkg}}) {
+            push @{$pkgrdeps{$_}}, @{$pkgrdeps{$pkg}};
+        }
+    }
+
+    for my $pkg (reverse @top_order) {
+        next if (! defined($pkgrddeps{$pkg}));
+        for (@{$pkgrddeps{$pkg}}) {
+            push @{$pkgdeps{$_}}, @{$pkgdeps{$pkg}};
+        }
+    }
+}
+
+sub resolve_deps {
+    # @pkglist: package list need to be resolve
+    # $deps   : resolve packages that specified packages depend on
+    # $rdeps  : resolve packages which depend on specified packages
+    # %packs  : all packages info:[spec_file, project_base_path]
+
+    my ($pkglist, $deps, $rdeps, %packs) = @_;
+    my @tobuild = @{$pkglist};
+    my @alldeps = ();
+    my @final = ();
+
+    if ($deps == 1){
+        foreach my $b (@tobuild) {
+            next if (! exists $pkgdeps{$b});
+            push @alldeps, @{$pkgdeps{$b}};
+        }
+    }
+    if ($rdeps == 1){
+        foreach my $b (@tobuild) {
+            next if (! exists $pkgrdeps{$b});
+            push @alldeps, @{$pkgrdeps{$b}};
+        }
+    }
+    my %hash = map { $_, 1 } @alldeps;
+    push @tobuild, (keys %hash);
+
+    debug("packages to be built: " . join(",", @tobuild));
+
+    foreach my $name (@tobuild) {
+        my $fn = $packs{$name}->{filename};
+        if (exists $packs{$name}{project_base_path}) {
+            push(@final, {
+                    filename => $fn,
+                    project_base_path => $packs{$name}{project_base_path},
+                    });
+        } else {
+            push(@final, $fn);
+        }
+    }
+    return @final;
 }
 
 sub find_circle {
@@ -1374,14 +1499,24 @@ if ($repos_setup == 0 ) {
 
 info("parsing package data...");
 my %packs = parse_packs($config, @packs);
+%to_build = %packs;
+
+# Create & Update package dependency
+info("building repo metadata ...");
+refresh_repo();
+
+info("package dependency resolving ...");
+update_pkgdeps();
+update_pkgddeps();
 
 if ($binarylist ne "" && -e $binarylist ) {
     open my $file, "<", $binarylist or die $!;
     my @bins = <$file>;
     chomp(@bins);
     close($file);
-    my @alldeps = ();
     my @tobuild = ();
+    my @final = ();
+
     foreach my $b (@bins) {
         next if $b eq "";
         my $found = 0;
@@ -1408,58 +1543,13 @@ if ($binarylist ne "" && -e $binarylist ) {
         }
     }
 
-    #print $_ . ", " foreach(sort @tobuild);
-    #print "\n";
-    #print $_ . ", " foreach(sort @tofind);
-    #print "\n";
-    foreach my $b (@tobuild) {
-        my @bdeps = expand_deps($packs{$b}->{filename});
-        if (!shift @bdeps ) {
-            debug("expansion error");
-            debug("  $_") for @bdeps;
-        } else {
-            #print $b . ": ";
-            #print $_ . ", " foreach(sort @bdeps);
-            #print "\n";
-            @alldeps = (@bdeps, @alldeps);
-        }
-    }
-    my %hash = map { $_, 1 } @alldeps;
-    my @allbins = keys %hash;
-    #print "Required dependencies: \n ";
-    #print $_ . ", " foreach(sort @allbins);
-    #print "\n";
-    foreach (@allbins) {
-        my $so = source_of($_, %packs);
-        if (defined($so)) {
-            push(@tobuild, $so);
-        }
-    }
+    push @final, resolve_deps(\@tobuild, $deps_build, $rdeps_build, %packs);
 
-    %hash = map { $_, 1 } @tobuild;
-    @tobuild = keys %hash;
-    info ("initial set:");
-    foreach my $p (@tobuild) {
-        print " $p, ";
-    }
-    print "\n";
-    my @final;
-    foreach my $name (@tobuild) {
-        my $fn = $packs{$name}->{filename};
-        if (exists $packs{$name}{project_base_path}) {
-            push(@final, {
-                filename => $fn,
-                project_base_path => $packs{$name}{project_base_path},
-            });
-        } else {
-            push(@final, $fn);
-        }
-    }
     %to_build = parse_packs($config, @final);
+    update_pkgdeps();
+    update_pkgddeps();
 } elsif ( $binarylist ne "") {
     error("Cant find binary list for image");
-} else {
-    %to_build = %packs
 }
 
 error("no available packages to build.") if (scalar (keys %to_build) == 0);
@@ -1535,14 +1625,6 @@ if ($noinit == 1 || $incremental == 1) {
     exit $ret;
 }
 
-
-# Create & Update package dependency
-info("building repo metadata ...");
-refresh_repo();
-
-info("package dependency resolving ...");
-update_pkgdeps();
-update_pkgddeps();
 
 if (check_circle() == 1) {
     info("circle found, exit...");

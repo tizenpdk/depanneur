@@ -1,0 +1,65 @@
+depanneur (0.3) unstable; urgency=high
+
+  * --noinit support
+  * Support build RPM packages for incremental build
+  * warning user and try again if umount failed for incremental build
+  * no need create/unpack tar ball for incremental build
+  * x86_64 support
+  * keep src rpm for each arch
+  * show build progress for multiple packages build
+  * Add --spec to support multi-spec project
+  * Add --define option to define macros for rpmbuild
+  * Modify SUDOV_PERIOD smaller (5 mins)
+  * Add more output info about building status
+  * Add --keep-packs to keep unused packages in buildroot
+
+ -- Qiang Zhang <qiang.z.zhang@intel.com>  Mon, 26 Nov 2012 10:56:15 +0800
+
+depanneur (0.2.1) unstable; urgency=high
+
+  * Update dependency: depend on tizen-build >= 2012.10.10.1
+
+ -- Qiang Zhang <qiang.z.zhang@intel.com>  Mon, 12 Nov 2012 10:56:15 +0800
+
+depanneur (0.2) unstable; urgency=high
+
+  * fix getlogin() fail issue on some system
+  * add function worker_thread() to clean up build worker in one place
+  * refine incremental build, don't need force running gbs in top git dir
+  * support multiple spec files building in one package.
+  * fix Ctrl + C issue:
+      - if one package build for a long time(>15 mins), sudo req passwd again
+      - sudo timeout issue, which will result in endless loop
+  * expand ~ in TIZEN_BUILD_ROOT, to fix create dir fail issue
+  * collect export error packages & report, and return None 0 if any error occur
+  * support building one spec file for --spec option used in gbs build
+  * refine error report in depanneur. Three types of error: export error,
+    expansion error and rpmbuild error, detail expansion info and build log are
+    attached behind packages.
+  * dependency circle check: if circle found from package dependency, the circle
+    link is printed and exit. currently, we don't support circle building.
+      - break expand_deps into two functions: one is refresh_repo(), which is
+        used to update %repo, which store repodata info, including 'provide' and
+        'depend' info, and another fuction is expand_deps().
+      - Add get_deps() to get direct dependency of specified package(specfile).
+      - Using Depth-first search algorithrm to try to find circle
+  * use bsd_glob to replace glob to fix thread crash issue in openSUSE 12.2
+    (perl 5.16)
+  * add --debug option for 'gbs export' if --debug specified
+  * Code cleanup
+     - fix perlcritic's warning
+     - remove useless sub wanted
+     - remove useless variables in git_wantted
+     - remove trailing spaces
+
+ -- Qiang Zhang <qiang.z.zhang@intel.com>  Ted, 24 Oct 2012 10:56:15 +0800
+
+depanneur (0.1) unstable; urgency=high
+
+  * first version of depanneur, including the following features:
+    * dependency build wit correct dependendcy order
+    * parallel build with customized threads pool
+    * full build to specify a top dir of all packages tree
+    * support generate local repo once build finished
+
+ -- Qiang Zhang <qiang.z.zhang@intel.com>  Tue, 11 Sep 2012 10:56:15 +0800

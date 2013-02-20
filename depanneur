@@ -74,7 +74,7 @@ my $path = "";
 my $style = "git";
 my $clean = 0;
 my $binarylist = "";
-my $buildall = 0;
+my $binary_from_file = "";
 my $commit = "HEAD";
 my $includeall = 0;
 my $upstream_branch = "";
@@ -148,7 +148,6 @@ GetOptions (
     "clean-once" => \$cleanonce,
     "exclude=s" => \@exclude,
     "exclude-from-file=s" => \$exclude_from_file,
-    "build-all" => \$buildall,
     "commit=s" => \$commit,
     "include-all" => \$includeall,
     "upstream-branch=s" => \$upstream_branch,
@@ -156,7 +155,8 @@ GetOptions (
     "squash-patches-until=s" => \$squash_patches_until,
     "no-patch-export" => \$no_patch_export,
     "packaging-dir=s" => \$packaging_dir,
-    "binary=s" => \$binarylist,
+    "binary-list=s" => \$binarylist,
+    "binary-from-file=s" => \$binary_from_file,
     "style=s" => \$style,
     "path=s" => \$path,
     "deps"  => \$deps_build,
@@ -434,9 +434,6 @@ if ( -d "$packaging_dir" && -d ".git" ) {
     } else {
         $package_path = abs_path($path);
     }
-}
-if ($binarylist ne "") {
-    $buildall = 1;
 }
 
 sub git_wanted {
@@ -1414,6 +1411,29 @@ sub build_report
     info("build roots located in:\n     $scratch_dir.*");
 }
 
+sub get_binary_list() {
+    my @bins = ();
+
+    if ($binary_from_file ne "") {
+        if (! -e $binary_from_file) {
+            error("Cant find binary list file $binary_from_file");
+        }
+
+        open my $file, "<", $binary_from_file or
+            die "Cant open binary list file $binary_from_file: $!\n";
+        my @lines = <$file>;
+        chomp(@lines);
+        push @bins, @lines;
+    }
+
+    if ($binarylist ne "") {
+        my @items = split(',', $binarylist);
+        chomp(@items);
+        push @bins, @items;
+    }
+
+    return @bins;
+}
 
 
 # MAIN
@@ -1425,7 +1445,7 @@ if ($style eq 'git') {
         push @specs, "$path/$packaging_dir/$arg_spec";
     }
 
-    if ($buildall || @specs == 0) {
+    if (@specs == 0) {
         File::Find::find({wanted => \&git_wanted}, $package_path );
         if (@original_specs > 1 && $commit ne "HEAD"){
             error("--commit option can't be specified with multiple packages");
@@ -1457,7 +1477,7 @@ if ($style eq 'git') {
     }
 } else {
     @packs = @ARGV;
-    if ($buildall || @packs == 0) {
+    if (@packs == 0) {
         File::Find::find({wanted => \&obs_wanted}, $package_path );
     }
 }
@@ -1514,11 +1534,8 @@ info("package dependency resolving ...");
 update_pkgdeps();
 update_pkgddeps();
 
-if ($binarylist ne "" && -e $binarylist ) {
-    open my $file, "<", $binarylist or die $!;
-    my @bins = <$file>;
-    chomp(@bins);
-    close($file);
+my @bins = get_binary_list();
+if (@bins) {
     my @tobuild = ();
     my @final = ();
 
@@ -1553,8 +1570,6 @@ if ($binarylist ne "" && -e $binarylist ) {
     %to_build = parse_packs($config, @final);
     update_pkgdeps();
     update_pkgddeps();
-} elsif ( $binarylist ne "") {
-    error("Cant find binary list for image");
 }
 
 error("no available packages to build.") if (scalar (keys %to_build) == 0);

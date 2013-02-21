@@ -1,3 +1,12 @@
+depanneur (0.5) unstable; urgency=high
+
+  * Add --binary-from-file option to specify a package list file
+  * Change --binary-list option, accept a packages list separated by comma(,).
+  * Add --deps to build specified packages and all packages they depend
+  * Add --rdeps to build specified packages and all packages depend on them
+
+ -- Qiang Zhang <qiang.z.zhang@intel.com>  Thu, 21 Feb 2013 10:56:15 +0800
+
 depanneur (0.4) unstable; urgency=high
 
   * Refine build behavior: gbs build should not depend on local copy

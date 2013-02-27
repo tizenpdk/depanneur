@@ -15,9 +15,6 @@ install:
 	install -m755 \
 	    depanneur  \
 	    $(DESTDIR)$(bindir)
-	install -m755 \
-	    data/depanneur_sudo  \
-	    $(DESTDIR)$(bindir)
 	install -m750 -d \
 	    $(DESTDIR)$(sudodir)
 	install -m440 \

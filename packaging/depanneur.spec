@@ -33,6 +33,5 @@ make install DESTDIR=$RPM_BUILD_ROOT
 
 %files
 %defattr(-,root,root,-)
-%{_bindir}/depanneur_sudo
 %{_bindir}/depanneur
 %{_sysconfdir}/sudoers.d/gbs

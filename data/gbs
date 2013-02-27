@@ -1,4 +1,11 @@
-ALL     ALL=(ALL) NOPASSWD:/usr/bin/depanneur_sudo
+ALL     ALL=(ALL) NOPASSWD: /bin/mount -o bind * */home/abuild/rpmbuild/BUILD/*
+ALL     ALL=(ALL) NOPASSWD: /bin/umount -l */home/abuild/rpmbuild/BUILD/*
+ALL     ALL=(ALL) NOPASSWD: /bin/umount -l -f */home/abuild/rpmbuild/BUILD/*
+ALL     ALL=(ALL) NOPASSWD: /bin/mkdir -p */home/abuild/rpmbuild/BUILD/*
+ALL     ALL=(ALL) NOPASSWD: /usr/bin/build
+ALL     ALL=(ALL) NOPASSWD: /bin/cp *.conf */scratch.*/*.conf
+ALL     ALL=(ALL) NOPASSWD: /bin/rm -f */.build.log
+ALL     ALL=(ALL) NOPASSWD: /bin/echo -n
 
 Defaults env_keep += "http_proxy"
 Defaults env_keep += "no_proxy"

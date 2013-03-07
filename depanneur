@@ -606,7 +606,7 @@ sub prepare_git {
         $current_rev = query_git_commit_rev($base, $commit);
 
         my $cached_rev = read_cache($cache_key);
-        $skip = ($cached_rev eq $current_rev);
+        $skip = ($cached_rev eq $current_rev) && (-e "$pkg_path/$cache_key/$spec_file");
     }
 
     if (!$skip || $includeall == 1) {
@@ -619,10 +619,15 @@ sub prepare_git {
             return;
         }
     }
-    push(@packs, {
-        filename => "$pkg_path/$cache_key/$spec_file",
-        project_base_path => $base,
-    });
+    if ( -e "$pkg_path/$cache_key/$spec_file" ){
+        push(@packs, {
+            filename => "$pkg_path/$cache_key/$spec_file",
+            project_base_path => $base,
+        });
+    }else{
+        warning("spec file $spec_file has not been exported to $pkg_path/$cache_key/ correctly,".
+                " please check if there're special macros in Name/Version/Release fields");
+    }
 }
 
 sub parse_packs {

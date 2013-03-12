@@ -1,0 +1,1642 @@
+#!/usr/bin/perl
+#
+use strict;
+use warnings;
+use File::Spec::Functions;
+
+BEGIN {
+  my ($wd) = $0 =~ m-(.*)/- ;
+  $wd ||= '.';
+  unshift @INC,  "$wd/build";
+  unshift @INC,  "$wd";
+  $ENV{VIRTUAL_ENV} = "/" if ! defined $ENV{VIRTUAL_ENV};
+  unshift @INC,  canonpath("$ENV{VIRTUAL_ENV}/usr/lib/build");
+}
+
+use YAML qw(LoadFile);
+use threads;
+use threads::shared;
+use File::Find ();
+use Term::ANSIColor qw(:constants);
+use File::Path;
+use File::Basename;
+use URI;
+use POSIX ":sys_wait_h";
+use File::Glob ':glob';
+use User::pwent qw(getpw);
+# Global vars
+
+
+# Flag to inform all threads that application is terminating
+my $TERM:shared=0;
+
+# Prevents double detach attempts
+my $DETACHING:shared;
+
+# Flag to inform main thread update pkgdeps
+my $dirty:shared=0;
+
+# Set the variable $File::Find::dont_use_nlink if you're using AFS,
+# since AFS cheats.
+
+# for the convenience of &wanted calls, including -eval statements:
+use vars qw/*name *dir *prune/;
+*name   = *File::Find::name;
+*dir    = *File::Find::dir;
+*prune  = *File::Find::prune;
+
+my ($zuid, $zgid);
+if (getlogin()) {
+     ($zuid, $zgid) = (getpwnam(getlogin()))[2,3];
+} else {
+     ($zuid, $zgid) = (getpwuid($<))[2,3];
+}
+
+
+use Cwd qw(cwd abs_path);
+use Getopt::Long;
+use Pod::Usage;
+use File::Temp qw(tempdir);
+use Build;
+use Build::Rpm;
+use Data::Dumper;
+use File::Basename;
+
+# "sudo -v" period
+use constant SUDOV_PERIOD => 3*60;
+
+my @threads;
+my @exclude = ();
+my @repos= ();
+my $arch = "i586";
+my $path = "";
+my $style = "git";
+my $clean = 0;
+my $binarylist = "";
+my $buildall = 0;
+my $commit = "";
+my $includeall = 0;
+my $upstream_branch = "";
+my $upstream_tag = "";
+my $squash_patches_until = "";
+my $packaging_dir = "packaging";
+my $dist = "tizen";
+my $dryrun = 0;
+my $help = 0;
+my $keepgoing = 0;
+my $clean_repos = 0;
+
+my $virtualenv = "$ENV{'VIRTUAL_ENV'}";
+my $build_root = $ENV{TIZEN_BUILD_ROOT};
+$build_root = expand_filename($build_root);
+my $localrepo = "$build_root/local/repos";
+my $order_dir = "$build_root/local/order";
+
+
+my $cache_dir = "$build_root/local/cache";
+my $groupfile="$build_root/meta/group.xml";
+my $build_dir = canonpath("$virtualenv/usr/lib/build");
+$ENV{'BUILD_DIR'} = $build_dir; # must change env variable in main thread
+my $config_filename = "$build_root/meta/local.yaml";
+my $dist_configs = "$build_root/meta/dist";
+my $exclude_from_file = "$build_root/meta/exclude";
+my $cleanonce = 0;
+my $debug = 0;
+my $incremental = 0;
+my $run_configure = 0;
+my $overwrite = 0;
+my $MAX_THREADS = 1;
+my $extra_packs = "";
+my $ccache = 0;
+my $noinit = 0;
+my $keep_packs = 0;
+my @defines;
+my $arg_spec = "";
+
+my @tofind = ();
+my %to_build = ();
+my %repo = ();
+my %pkgdeps = ();
+my %pkgddeps = (); # direct dependency dict
+my %visit    = ();
+my @running :shared = ();
+my @done :shared = ();
+my @skipped = ();
+my @original_specs = ();
+
+my @cleaned : shared = ();
+my %errors :shared;
+my %expansion_errors = ();
+my @export_errors;
+my %tmp_expansion_errors = ();
+my $packages_built :shared  = 0;
+my %workers = ();
+
+
+GetOptions (
+    "repository=s" => \@repos,
+    "arch=s" => \$arch,
+    "dist=s" => \$dist,
+    "configdir=s" => \$dist_configs,
+    "clean" => \$clean,
+    "clean-once" => \$cleanonce,
+    "exclude=s" => \@exclude,
+    "exclude-from-file=s" => \$exclude_from_file,
+    "build-all" => \$buildall,
+    "commit=s" => \$commit,
+    "include-all" => \$includeall,
+    "upstream-branch=s" => \$upstream_branch,
+    "upstream-tag=s" => \$upstream_tag,
+    "squash-patches-until=s" => \$squash_patches_until,
+    "packaging-dir=s" => \$packaging_dir,
+    "binary=s" => \$binarylist,
+    "style=s" => \$style,
+    "path=s" => \$path,
+    "dryrun" => \$dryrun,
+    "help|?" => \$help,
+    "keepgoing" => \$keepgoing,
+    "overwrite" => \$overwrite,
+    "debug" => \$debug,
+    "incremental" => \$incremental,
+    "no-configure" => \$run_configure,
+    "threads=s" => \$MAX_THREADS,
+    "extra-packs=s" => \$extra_packs,
+    "ccache" => \$ccache,
+    "noinit" => \$noinit,
+    "keep-packs" => \$keep_packs,
+    "define=s" => \@defines,
+    "spec=s" => \$arg_spec,
+    "clean-repos" => \$clean_repos,
+    );
+
+if ( $help ) {
+    print "
+Depanneur is a package build tool based on the obs-build script.
+
+Available options:
+
+    --arch <Architecture>
+      Build for the specified architecture.
+
+    --dist <Distribution>
+      Build for the specified distribution.
+
+    --path <path to sources>
+      Path to git repo tree, default is packages/ sub-directory
+      in the developer environment.
+
+    --clean
+      clean the build environment before building a package.
+
+    --clean-once
+      clean the build environment only once when you start
+      building multiple packages, after that use existing
+      environment for all packages.
+
+    --threads  [number of threads]
+      Build packages in parallel. This will start up to the
+      specified number of build jobs when there are more
+      than 1 job in the queue.
+
+    --overwrite
+      Overwrite existing binaries.
+
+    --keepgoing
+      If a package build fails, do not abort and continue
+      building other packages in the queue.
+
+    --incremental
+      Build a package from the local git tree directly.
+      This option does not produce packages now, it is very
+      helpful when debugging build failures and helps with
+      speeding up development.
+      This option options mounts the local tree in the build
+      environment and builds using sources in the git tree,
+      if the build fails, changes can be done directly to the
+      source and build can continue from where it stopped.
+
+    --no-configure
+      This option disables running configure scripts and auto-
+      generation of auto-tools to make incremental build possible
+      It requires the configure scripts in the spec to be refereneced
+      using the %configure, %reconfigre and %autogen macros.
+
+    --debug
+      Debug output.
+
+";
+    exit(0);
+}
+
+sub debug {
+    my $msg = shift;
+    $msg =~ s#://[^@]*@#://#g;
+    print MAGENTA, "debug: ", RESET, "$msg\n" if $debug == 1;
+}
+
+sub info {
+    my $msg = shift;
+    print GREEN, "info: ", RESET, "$msg\n";
+}
+
+sub warning {
+    my $msg = shift;
+    print YELLOW, "warning: ", RESET, "$msg\n";
+}
+
+sub error {
+    my $msg = shift;
+    print RED, "error: ", RESET, "$msg\n";
+    exit 1;
+}
+
+sub my_system {
+    my $cmd = shift;
+    debug("my_system: $cmd");
+    my $ret;
+    defined(my $pid=fork) or die "Can not fork: $!\n";
+    unless ($pid) {
+        exec ($cmd);
+        exit -1;
+    }
+    waitpid ($pid,0);
+    $ret = WIFEXITED($?);
+    $ret = $?;
+    return $ret;
+}
+
+sub expand_filename {
+    my $path = shift;
+    my $home_dir = sub { my $p = getpw($_[0]) or die "$_[0] is not a valid username\n";
+                         return $p->dir();
+                       };
+    $path =~ s{^~(?=/|$)}{ $ENV{HOME} ? "$ENV{HOME}" : $home_dir->( $< ) }e
+          or $path =~ s{^~(.+?)(?=/|$)}{ $home_dir->( $1 ) }e;
+    return $path;
+}
+
+sub is_archive_filename {
+    my $basename = shift;
+    my @arhive_formats = ('tar', 'zip');
+    my %archive_ext_aliases = ( 'tgz' => ['tar', 'gzip' ],
+                                'tbz2'=> ['tar', 'bzip2'],
+                                'tlz' => ['tar', 'lzma' ],
+                                'txz' => ['tar', 'xz'   ]
+                               );
+    my %compressor_opts = ( 'gzip'  => [['-n'], 'gz'  ],
+                            'bzip2' => [[],     'bz2' ],
+                            'lzma'  => [[],     'lzma'],
+                            'xz'    => [[],     'xz'  ]
+                           );
+
+    my @split = split(/\./, $basename);
+    if (scalar(@split) > 1) {
+        if (exists $archive_ext_aliases{$split[-1]}) {
+            return 1;
+        } elsif (grep($_ eq $split[-1], @arhive_formats)) {
+            return 1;
+        } else {
+            foreach my $value (values %compressor_opts) {
+                if ($value->[1] eq $split[-1] && scalar(@split) > 2 &&
+                    grep($_ eq $split[-2], @arhive_formats)){
+                    return 1;
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
+if ($incremental == 1 && $style ne 'git') {
+    error("incremental build only support git style packages");
+}
+if ($style ne 'git' && $style ne 'obs') {
+    error("style should be 'git' or 'obs'");
+}
+
+my @package_repos = ();
+my $Config;
+if (-e $config_filename) {
+    $Config = LoadFile($config_filename);
+    if (!$Config) {
+        error("Error while parsing $config_filename");
+    }
+}
+
+if (@repos) {
+    @package_repos = @repos;
+} else {
+    if ($Config){
+        foreach my $r (@{$Config->{Repositories}}) {
+            my $uri = URI->new($r->{Url});
+            if ( $r->{Password} && $r->{Username} ) {
+                $uri->userinfo($r->{Username} . ":" . $r->{Password});
+            }
+            if ($uri->scheme ne "file") {
+                push(@package_repos, $uri);
+            }
+        }
+    }
+}
+
+my $scratch_dir = "$build_root/local/scratch.$arch";
+
+# noinit
+if ($noinit == 1) {
+    # find dist config from build root
+    my $scratch = "$scratch_dir.0";
+    if (! -e "$scratch") {
+        error("build root:$scratch does not exist. Please build without --noinit first");
+    }
+    open(my $file, '<', "$scratch/.guessed_dist") ||
+        die "read dist name failed: $!";
+    $dist = readline($file);
+    close($file);
+    chomp $dist;
+    $dist_configs= "$scratch";
+    if (! -e "$dist_configs/$dist.conf") {
+        error("build root broken caused by missing build conf. Please build without --noinit first");
+    }
+}
+
+my $pkg_path = "$build_root/local/sources/$dist";
+my $cache_path = "$build_root/local/sources/$dist/cache";
+my $success_logs_path = "$localrepo/$dist/$arch/logs/success";
+my $fail_logs_path = "$localrepo/$dist/$arch/logs/fail";
+my $rpm_repo_path = "$localrepo/$dist/$arch/RPMS";
+my $srpm_repo_path = "$localrepo/$dist/$arch/SRPMS";
+
+sub mkdir_p {
+    my $path = shift;
+    my $err_msg;
+    # attempt a 'mkdir -p' on the provided path and catch any errors returned
+    my $mkdir_out = File::Path::make_path( $path, { error => \my $err } );
+    # catch and return the error if there was one
+    if (@$err) {
+        for my $diag (@$err) {
+            my ( $file, $message ) = %$diag;
+            $err_msg .= $message;
+        }
+        print STDERR "$err_msg";
+    }
+}
+
+if ( $exclude_from_file ne "" && -e $exclude_from_file ) {
+    debug("using $exclude_from_file for package exclusion");
+    open my $file, '<', $exclude_from_file  or die $!;
+    @exclude = <$file>;
+    chomp(@exclude);
+    close($file);
+}
+
+
+mkdir_p($order_dir);
+mkdir_p($success_logs_path);
+mkdir_p($fail_logs_path);
+mkdir_p($cache_path);
+mkdir_p($rpm_repo_path);
+mkdir_p($srpm_repo_path);
+
+my @packs;
+my $package_path = "";
+
+# This arch policy comes from sat-solver:src/poolarch.c
+my %archpolicies = (
+          "x86_64"      =>  ["x86_64", "i686", "i586", "i486", "i386", "noarch"],
+          "i686"        =>  ["i686", "i586", "i486", "i386", "noarch"],
+          "i586"        =>  ["i586", "i486", "i386", "noarch"],
+          "i486"        =>  ["i486", "i386", "noarch"],
+          "i386"        =>  ["i386", "noarch"],
+          "ia64"        =>  ["ia64", "i686", "i586", "i486", "i386", "noarch"],
+          "armv7tnhl"   =>  ["arvm7tnhl", "armv7thl", "armv7nhl", "armv7hl", "noarch"],
+          "armv7thl"    =>  ["armv7thl", "armv7hl", "noarch"],
+          "armv7nhl"    =>  ["armv7nhl", "armv7hl", "noarch"],
+          "armv7hl"     =>  ["armv7hl", "noarch"],
+          "armv7l"      =>  ["armv7l", "armv7el", "armv6l", "armv5tejl", "armv5tel", "armv5l", "armv4tl", "armv4l", "armv3l", "noarch"],
+          "armv6l"      =>  ["armv6l", "armv5tejl", "armv5tel", "armv5l", "armv4tl", "armv4l", "armv3l", "noarch"],
+          "armv5tejl"   =>  ["armv5tejl", "armv5tel", "armv5l", "armv4tl", "armv4l", "armv3l", "noarch"],
+          "armv5tel"    =>  ["armv5tel", "armv5l", "armv4tl", "armv4l", "armv3l", "noarch"],
+          "armv5l"      =>  ["armv5l", "armv4tl", "armv4l", "armv3l", "noarch"],
+          "armv4tl"     =>  ["armv4tl", "armv4l", "armv3l", "noarch"],
+          "armv4l"      =>  ["armv4l", "armv3l", "noarch"],
+        );
+
+error("$arch not support") if (not exists $archpolicies{$arch});
+
+my @archs = @{$archpolicies{$arch}};
+my $archpath = join(":", @archs);
+
+my $config = Build::read_config_dist($dist, $archpath, $dist_configs);
+
+if ( -d "$packaging_dir" && -d ".git" ) {
+    $package_path = cwd();
+} else {
+    if ( $path eq "" ) {
+        $package_path = "$build_root/packages";
+    } else {
+        $package_path = abs_path($path);
+    }
+}
+if ($binarylist ne "") {
+    $buildall = 1;
+}
+
+sub git_wanted {
+    fill_packs_from_git($name) if /^($packaging_dir)\z/s && -d $_;
+}
+
+sub obs_wanted {
+    /^.*\.spec\z/s && fill_packs_from_obs($name);
+}
+
+sub fill_packs_from_obs {
+    my $name = shift;
+    # exclude spec file that in .osc subdirs
+    $name =~ m/\.osc/ || push(@packs, $name);
+}
+
+
+sub fill_packs_from_git {
+    my $name = shift;
+    my $base = dirname($name);
+    my $prj = basename($base);
+    if ( ! -e "$base/.git" ) {
+        debug("$base is not a git checkout");
+        return;
+    }
+    if ( (grep $_ eq $prj, @exclude) ) {
+        return;
+    }
+    debug("working on $base");
+    my $pattern = "$name/*.spec";
+    push(@original_specs, glob($pattern));
+}
+
+sub gbs_export {
+    my ($base, $spec) = @_;
+    my @args = ();
+    my $cmd;
+    push @args, "gbs";
+    push @args, "--debug" if ($debug);
+    push @args, "export";
+    push @args, "$base";
+    push @args, "-o $pkg_path";
+    push @args, "--spec $spec";
+    if ($includeall == 1) {
+        push @args, "--include-all";
+    } elsif ($commit ne "") {
+        push @args, "--commit=$commit";
+    }
+    if (! $upstream_branch eq "") {
+        push @args, "--upstream-branch=$upstream_branch";
+    }
+    if (! $upstream_tag eq "") {
+        push @args, "--upstream-tag=$upstream_tag";
+    }
+    if (! $squash_patches_until eq "") {
+        push @args, "--squash-patches-until=$squash_patches_until";
+    }
+    if (! $packaging_dir eq "") {
+        push @args, "--packaging-dir=$packaging_dir";
+    }
+    $cmd = join(" ", @args);
+    return my_system($cmd);
+}
+
+sub read_cache {
+    my ($cache_key) = @_;
+    my $cache_fname = "$cache_path/$cache_key";
+
+    my $cache = '';
+    if (-e $cache_fname) {
+        open(my $rev, '<', $cache_fname) ||
+            die "read reversion cache($cache_fname) failed: $!";
+        $cache = readline($rev);
+        close($rev);
+        chomp $cache;
+    }
+    return $cache;
+}
+
+sub write_cache {
+    my ($cache_key, $cache_val, $base, $spec) = @_;
+    my $cache_fname = "$cache_path/$cache_key";
+
+    if (gbs_export($base, $spec) != 0) {
+        push(@export_errors, $cache_key);
+        return;
+    }
+
+    my $src_rpm = "$srpm_repo_path/$cache_key.src.rpm";
+    if (-f $src_rpm) {
+        # Remove old source rpm packages to build again, or depanneur
+        # will skip packages with src.rpm exists
+        my_system("rm -f $src_rpm");
+    }
+
+    open(my $rev1, "+>", $cache_fname) ||
+        die "write reversion cache($cache_fname) failed: $!";
+    print $rev1 $cache_val . "\n";
+    close($rev1);
+    1;
+}
+
+sub clean_cache {
+    my ($cache_key) = @_;
+    my $cache_fname = "$cache_path/$cache_key";
+
+    unlink $cache_fname;
+}
+
+sub query_git_commit_rev {
+    my ($base, $commit_id) = @_;
+
+    open(my $git, '-|', "git --git-dir $base/.git rev-parse $commit_id") ||
+        die "query git commit reversion($commit_id) failed: $!";
+    my $rev = readline($git);
+    close($git);
+    chomp $rev;
+    return $rev;
+}
+
+sub prepare_git {
+    my $config = shift;
+    my $spec = shift;
+
+    my $packaging = dirname($spec);
+    my $base = dirname($packaging);
+
+    my $spec_file = basename($spec);
+    if ($arg_spec ne "" and $commit ne "") {
+        my $tmp_dir = abs_path(tempdir(CLEANUP=>1));
+        my $tmp_spec = "$tmp_dir/$spec_file";
+        my $without_base = $spec;
+        $without_base =~ s!$base/!!;
+        if (my_system("cd $base; git show $commit:$without_base ".
+            "> $tmp_spec 2>/dev/null") != 0) {
+            warning("failed to checkout spec file from commit: $commit");
+            return;
+        }
+        $spec = $tmp_spec;
+    }
+
+    my $pack = Build::Rpm::parse($config, $spec);
+    if (! exists $pack->{name} || ! exists $pack->{version} || ! exists $pack->{release}) {
+        debug("failed to parse spec file: $spec, name,version,release fields must be present");
+        return;
+    }
+    my $pkg_name = $pack->{name};
+    my $pkg_version = $pack->{version};
+    my $pkg_release = $pack->{release};
+    my $cache_key = "$pkg_name-$pkg_version-$pkg_release";
+    my $skip = 0;
+    my $current_rev = '';
+
+    if (! -e "$base/.git") {
+        warning("not a git repo: $base/.git!!");
+        return;
+    } else {
+        my $commit_id;
+        if ($commit eq "") {
+            $commit_id = "HEAD";
+        }else{
+            $commit_id = $commit;
+        }
+
+        $current_rev = query_git_commit_rev($base, $commit_id);
+
+        my $cached_rev = read_cache($cache_key);
+        $skip = ($cached_rev eq $current_rev);
+    }
+
+    if (!$skip || $includeall == 1) {
+        # Set cache_rev as 'include-all' if --include-all specified
+        my $val = ($includeall == 1) ? "include-all" : $current_rev;
+        info("start export source from: $base ...");
+        unless (write_cache($cache_key, $val, $base, $spec_file)) {
+            clean_cache($cache_key);
+            debug("$pkg_name was not exported correctly");
+            return;
+        }
+    }
+    push(@packs, {
+        filename => "$pkg_path/$cache_key/$spec_file",
+        project_base_path => $base,
+    });
+}
+
+sub parse_packs {
+    my ($config, @packs) = @_;
+    my %packs = ();
+    foreach my $spec_ref (@packs) {
+        my $spec;
+        my $base;
+        if (ref($spec_ref) eq "HASH") {
+            # project_base_path set in sub prepare_git()
+            $spec = $spec_ref->{filename};
+            $base = $spec_ref->{project_base_path};
+        } else {
+            $spec = $spec_ref;
+        }
+        my $pack = Build::Rpm::parse($config, $spec);
+        if ( ( $pack->{'exclarch'} ) &&  ( ! grep $_ eq $archs[0], @{$pack->{'exclarch'}} ) ) {
+            warning("build arch not compatible: " . join(" ", @{$pack->{'exclarch'}}));
+            next;
+        }
+        my $name = $pack->{name};
+        my $version = $pack->{version};
+        my $release = $pack->{release};
+        my @buildrequires = $pack->{deps};
+        my @subpacks = $pack->{subpacks};
+        my @sources = ();
+        for my $src (keys %{$pack}) {
+            next if $src !~ /source/;
+            next if (is_archive_filename($pack->{$src}) == 0);
+            push @sources, $src;
+        }
+        my @sorted =  sort {
+            my $l = ($a =~ /source(\d*)/)[0];
+            $l = -1 if ($l eq "");
+            my $r = ($b =~ /source(\d*)/)[0];
+            $r = -1 if ($r eq "");
+            int($l) <=> int($r);
+        } @sources;
+
+        if ( (grep $_ eq $name, @exclude) ) {
+            next;
+        }
+        $packs{$name} = {
+            name => $name,
+            version => $version,
+            release => $release,
+            deps => @buildrequires,
+            subpacks => @subpacks,
+            filename => $spec,
+        };
+
+        if (@sorted) {
+            $packs{$name}->{source} = basename($pack->{shift @sorted});
+        }
+
+        if ($base) {
+            $packs{$name}{project_base_path} = $base;
+        }
+    }
+    return %packs;
+}
+
+sub refresh_repo {
+    my $rpmdeps = "$order_dir/.repo.cache";
+    my (%fn, %prov, %req);
+
+    my %packs;
+    my %ids;
+
+    my %packs_arch;
+    my %packs_done;
+    open(my $fh, '<', $rpmdeps) || die("$rpmdeps: $!\n");
+    # WARNING: the following code assumes that the 'I' tag comes last
+    my ($pkgF, $pkgP, $pkgR);
+    while(<$fh>) {
+      chomp;
+      if (/^F:(.*?)-\d+\/\d+\/\d+: (.*)$/) {
+        $pkgF = $2;
+        next if $fn{$1};
+        $fn{$1} = $2;
+        my $pack = $1;
+        $pack =~ /^(.*)\.([^\.]+)$/ or die;
+        push @{$packs_arch{$2}}, $1;
+      } elsif (/^P:(.*?)-\d+\/\d+\/\d+: (.*)$/) {
+        $pkgP = $2;
+        next if $prov{$1};
+        $prov{$1} = $2;
+      } elsif (/^R:(.*?)-\d+\/\d+\/\d+: (.*)$/) {
+        $pkgR = $2;
+        next if $req{$1};
+        $req{$1} = $2;
+      } elsif (/^I:(.*?)-\d+\/\d+\/\d+: (.*)$/) {
+        if ($ids{$1} && $packs_done{$1} && defined($pkgF) && defined($pkgP) && defined($pkgR)) {
+          my $i = $1;
+          my $oldid = $ids{$1};
+          my $newid = $2;
+          if (Build::Rpm::verscmp($oldid, $newid) < 0) {
+            $ids{$i}  = $newid;
+            $fn{$i}   = $pkgF;
+            $prov{$i} = $pkgP;
+            $req{$i}  = $pkgR;
+          }
+        } else {
+          next if $ids{$1};
+          $ids{$1} = $2;
+        }
+        undef $pkgF;
+        undef $pkgP;
+        undef $pkgR;
+      } elsif ($_ eq 'D:') {
+        %packs_done = %ids;
+      }
+    }
+    close $fh;
+
+    for my $arch (@archs) {
+      $packs{$_} ||= "$_.$arch" for @{$packs_arch{$arch} || []};
+    }
+
+    my $dofileprovides = %{$config->{'fileprovides'}};
+
+    for my $pack (keys %packs) {
+      my $r = {};
+      my (@s, $s, @pr, @re);
+      @s = split(' ', $prov{$packs{$pack}} || '');
+      while (@s) {
+        $s = shift @s;
+        next if !$dofileprovides && $s =~ /^\//;
+        if ($s =~ /^rpmlib\(/) {
+          splice(@s, 0, 2);
+          next;
+        }
+        push @pr, $s;
+        splice(@s, 0, 2) if @s && $s[0] =~ /^[<=>]/;
+      }
+      @s = split(' ', $req{$packs{$pack}} || '');
+      while (@s) {
+        $s = shift @s;
+        next if !$dofileprovides && $s =~ /^\//;
+        if ($s =~ /^rpmlib\(/) {
+          splice(@s, 0, 2);
+          next;
+        }
+        push @re, $s;
+        splice(@s, 0, 2) if @s && $s[0] =~ /^[<=>]/;
+      }
+      $r->{'provides'} = \@pr;
+      $r->{'requires'} = \@re;
+      $repo{$pack} = $r;
+    }
+
+}
+
+sub expand_deps {
+    my $spec = shift;
+    my ($packname, $packvers, $subpacks, @packdeps);
+    $subpacks = [];
+
+    if ($spec) {
+      my $d;
+      if ($spec =~ /\.kiwi$/) {
+        # just set up kiwi root for now
+        $d = {
+          'deps' => [ 'kiwi', 'zypper', 'createrepo', 'squashfs' ],
+          'subpacks' => [],
+        };
+      } else {
+        $d = Build::parse($config, $spec);
+      }
+      $packname = $d->{'name'};
+      $packvers = $d->{'version'};
+      $subpacks = $d->{'subpacks'};
+      @packdeps = @{$d->{'deps'} || []};
+    }
+
+    Build::readdeps($config, undef, \%repo);
+
+    #######################################################################
+    my @extradeps = ();
+    my @bdeps = Build::get_build($config, $subpacks, @packdeps, @extradeps);
+
+    return @bdeps;
+}
+
+# get direct dependencies of specified package
+sub get_deps {
+    my $spec  = shift;
+    my @bdeps = ();
+    my @ndeps = ();
+    my @deps  = ();
+    my $d     = Build::parse($config, $spec);
+
+    @deps = @{$d->{'deps'} || []};
+    @ndeps = grep {/^-/} @deps;
+    my %ndeps = map {$_ => 1} @ndeps;
+    @deps = grep {!$ndeps{$_}} @deps;
+    # TBD: Do we need enable this
+    # push @deps, @{$config->{'required'}};
+    @deps = Build::do_subst($config, @deps);
+    foreach my $pack (@deps) {
+        next if !defined($pack);
+        my $pkg;
+        my $found = 0;
+        foreach my $pkg (keys %repo) {
+            my @prov = @{$repo{$pkg}->{'provides'}};
+            if (grep $_ eq $pack, @prov ){
+                push (@bdeps, $pkg);
+                last;
+            }
+        }
+    }
+    return @bdeps;
+}
+
+sub createrepo
+{
+    my $arch = shift;
+    my $dist = shift;
+
+    my_system("touch $srpm_repo_path");
+    my_system("touch $rpm_repo_path");
+
+    my $groups = "";
+    if ( -e $groupfile ) {
+        $groups = " --groupfile=$groupfile ";
+    }
+
+    my_system ("cd $localrepo/$dist/$arch && rm -rf repodata && createrepo $groups --changelog-limit=0 -q --exclude 'logs/*rpm' . > /dev/null 2>&1 ") == 0
+        or die "createrepo failed: $?\n";
+}
+
+sub find_idle {
+    my $idle = -1;
+    foreach my $w (sort keys %workers) {
+        my $tid = $workers{$w}->{tid};
+        my $state = $workers{$w}->{state};
+        if (! defined(threads->object($tid))) {
+            set_idle($w);
+            $idle = $w;
+            last;
+        }
+    }
+    foreach my $w (sort keys %workers) {
+        if ( $workers{$w}->{state} eq 'idle' ) {
+            $idle = $w;
+            last;
+        }
+    }
+    return $idle;
+}
+
+sub set_busy {
+    my $worker = shift;
+    my $thread = shift;
+    $workers{$worker} = { 'state' => 'busy', 'tid' => $thread };
+}
+
+sub set_idle {
+    my $worker = shift;
+    $workers{$worker} = { 'state' => 'idle' , 'tid' => undef};
+}
+
+sub source_of {
+    my ($sub, %packs) = @_;
+    foreach my $x (keys %packs) {
+        my @sp = @{$packs{$x}->{subpacks}};
+        if (grep $_ eq $sub, @sp ) {
+            return $x;
+        }
+    }
+    return;
+}
+
+sub update_pkgdeps
+{
+    %tmp_expansion_errors = ();
+    foreach my $name (keys %to_build) {
+        next if (defined $pkgdeps{$name});
+        if(! (grep $_ eq $name, @skipped)) {
+            my $fn = $to_build{$name}->{filename};
+            debug("Checking dependencies for $name");
+            my @bdeps = expand_deps($fn);
+            if (!shift @bdeps ) {
+                debug("expansion error");
+                debug("  $_") for @bdeps;
+                $tmp_expansion_errors{$name} = [@bdeps];
+                next;
+            }
+            my @deps;
+            foreach my $depp (@bdeps) {
+                my $so = source_of($depp, %to_build);
+                if (defined($so) && $name ne $so
+                    && (! grep($_ eq $so, @skipped))
+                    && (! grep($_ eq $so, @deps))) {
+                    push (@deps, $so);
+                }
+            }
+            $pkgdeps{$name} = [@deps];
+        }
+    }
+}
+
+sub update_pkgddeps {
+    foreach my $name (keys %to_build) {
+        # Skip expansion error packages
+        next if (exists $tmp_expansion_errors{$name});
+        if(! (grep $_ eq $name, @skipped)) {
+            my $fn = $to_build{$name}->{filename};
+            my @bdeps = get_deps($fn);
+            my @deps;
+            foreach my $depp (@bdeps) {
+                my $so = source_of($depp, %to_build);
+                if (defined($so) && $name ne $so
+                    && (! grep($_ eq $so, @skipped))
+                    && (! grep($_ eq $so, @deps))
+                    && (! exists $tmp_expansion_errors{$so})) {
+                    push (@deps, $so);
+                }
+            }
+            $pkgddeps{$name} = [@deps]
+        }
+    }
+}
+
+sub find_circle {
+    my (@stack) = @_;
+    my $curpkg = $stack[$#stack];
+
+    return 0 if (exists $tmp_expansion_errors{$curpkg});
+
+    my @deps = @{$pkgddeps{$curpkg}};
+    my $dep;
+
+    foreach my $dep (@deps) {
+        if ($visit{$dep} == 1 && ! (grep $_ eq $dep, @stack)){
+            next;
+        }
+        $visit{$dep} = 1;
+        if (grep $_ eq $dep, @stack){
+            my @circle = ();
+            push @circle, $dep;
+            while (@stack) {
+                my $cur = pop @stack;
+                unshift @circle, $cur;
+                last if ($cur eq $dep);
+            }
+            warning ("circle found: " . join("->", @circle));
+            return 1;
+        } else {
+            push (@stack, $dep);
+            return 1 if (find_circle(@stack) == 1);
+            pop @stack;
+        }
+    }
+
+    return 0;
+}
+
+sub check_circle {
+    my $pkg;
+    my $reset_visit = sub {
+        for my $pkg (keys %pkgddeps) {
+            # Skip expansion error packages
+            next if (exists $tmp_expansion_errors{$pkg});
+            $visit{$pkg} = 0;
+        }
+    };
+    for $pkg (keys %pkgddeps) {
+        my @visit_stack;
+        &$reset_visit();
+        push (@visit_stack, $pkg);
+        $visit{$pkg} = 1;
+        if (find_circle(@visit_stack) == 1) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+sub worker_thread {
+    my ($name, $thread, $index) = @_;
+
+    my $status;
+    eval {
+        $status = build_package($name, $thread, $index);
+    };
+    if ($@) {
+        warning("$@");
+        $status = -1;
+    }
+
+    {
+        lock($DETACHING);
+        threads->detach() if ! threads->is_detached();
+        @running = grep { $_ ne "$name"} @running;
+        push(@done, $name);
+        if ($status == 0) {
+            $dirty = 1;
+        } else {
+            my $version = $to_build{$name}->{version};
+            my $release = $to_build{$name}->{release};
+            if (-f "$localrepo/$dist/$arch/logs/fail/$name-$version-$release/log") {
+                $errors{"$name-$dist-$arch"} = "$localrepo/$dist/$arch/logs/fail/$name-$version-$release/log"
+            } else {
+                $errors{"$name-$dist-$arch"} = "";
+            }
+        }
+    }
+
+    debug("*** build $name exit with status($status), is dirty:$dirty, (worker: $thread) ***");
+    return $status;
+}
+
+sub safe_umount {
+    my ($device) = @_;
+    return if (my_system("sudo umount -l $device") == 0);
+
+    warning("!!!! umount device $device failed. It may cause files lost in ".
+        "some cases. Please stop the process which is using this device and ".
+        "press any key to umount again !!!!");
+
+    <>;
+    if (my_system("sudo umount -l -f $device") != 0) {
+        warning("!!!! IMPORTANT: umount failed again, please backup your ".
+        "source code and try to umount manually !!!!");
+    }
+}
+
+sub build_package {
+    my ($name, $thread, $index) = @_;
+    use vars qw(@package_repos);
+
+    my $version = $to_build{$name}->{version};
+    my $release = $to_build{$name}->{release};
+    my $spec_name = basename($to_build{$name}->{filename});
+    my $pkg_path = "$build_root/local/sources/$dist/$name-$version-$release";
+    my $srpm_filename = "";
+    if ( $style eq "git" && $incremental == 0 ) {
+        $srpm_filename = "$pkg_path/$spec_name";
+    } else {
+        $srpm_filename = $to_build{$name}->{filename};
+    }
+
+    my @args = ();
+    my @args_inc = ();
+    if ($TERM == 1) {
+        return -1;
+    }
+    push @args, "sudo -E $virtualenv/usr/bin/build";
+    if ($arch ne "i586" ) {
+        push @args, "--use-system-qemu";
+    }
+    push @args, "--uid $zuid:$zgid";
+    push @args, "--jobs 4";
+    push @args, "--no-init" if ($noinit == 1);
+    push @args, "--keep-packs" if ($keep_packs == 1);
+    push @args, "--cachedir $cache_dir";
+    push @args, "--dist $dist";
+    push @args, "--configdir $dist_configs";
+    push @args, "--arch $archpath";
+    push @args, "$srpm_filename";
+    push @args, "--ccache" if ($ccache);
+    if (! $extra_packs eq "") {
+        my $packs = join(' ', split(',', $extra_packs));
+        push @args, "--extra-packs=\"$packs\"";
+    }
+
+    # Rebuild the package.
+    my $count = scalar(keys %to_build) - scalar (@skipped);
+    info("*** [$index/$count] building $name-$version-$release $arch $dist (worker: $thread) ***");
+
+    if ( -d "$rpm_repo_path" ) {
+        push @args, "--repository $rpm_repo_path";
+    }
+    foreach my $r (@package_repos) {
+        push @args, "--repository $r";
+    }
+
+    if ( ($clean || $cleanonce ) && ( ! grep $_ == $thread, @cleaned) ) {
+       push @args, "--clean";
+       if ($cleanonce) {
+            push(@cleaned, $thread);
+       }
+    }
+    my $scratch = "$scratch_dir.$thread";
+    my $redirect = "";
+    if ($MAX_THREADS > 1 ) {
+        $redirect = "> /dev/null 2>&1";
+    }
+
+    push @args, "--root $scratch";
+    if ($noinit == 1 && -e "$scratch/not-ready") {
+        error("build root is not ready , --noinit is not allowed");
+    }
+    push @args, "--clean" if (-e "$scratch/not-ready");
+    push @args, $redirect;
+    for my $define (@defines) {
+        push @args, "--define '$define'";
+    }
+
+    my $cmd = "";
+    my $builddir = "$scratch/home/abuild/rpmbuild/BUILD/$name-$version";
+    my $source_tar = "";
+    if (exists $to_build{$name}->{source}) {
+        $source_tar = "$to_build{$name}->{project_base_path}/$packaging_dir/$to_build{$name}->{source}";
+    }
+    if ($incremental == 1) {
+        info("doing incremental build");
+        @args_inc = @args;
+        my $buildcmd = "";
+        if ( ! -d "$builddir" || grep($_ eq "--clean", @args_inc)){
+            debug("Build directory does not exist");
+            push @args_inc, "--no-build";
+            push @args_inc, "--clean" if (! grep($_ eq "--clean", @args_inc));
+            $cmd = join(" ", @args_inc);
+            return -1 if (my_system($cmd) != 0);
+        } else {
+            debug("build directory exists");
+        }
+
+        # More incremental options
+        if ($run_configure == 1 ) {
+            push @args, "--define '%configure echo'";
+            push @args, "--define '%reconfigure echo'";
+            push @args, "--define '%autogen echo'";
+        }
+        push @args, "--root $scratch";
+        push @args, "--no-topdir-cleanup";
+        push @args, "--no-init";
+        @args = grep { $_ ne "--clean"} @args;
+        push @args, "--short-circuit --stage=\"-bs\"";
+
+        my $project_base_path = $to_build{$name}->{project_base_path};
+        if (! -e "$builddir") {
+            my_system("sudo mkdir -p $builddir");
+        }
+        my $mount = "sudo mount -o bind $project_base_path $builddir";
+        my_system($mount);
+        my $tmp_dir = abs_path(tempdir(CLEANUP=>1));
+        my_system("tar -zcf $source_tar $tmp_dir") if ($source_tar ne "");
+    }
+
+    $cmd = join(" ", @args);
+    debug($cmd);
+    my $ret = my_system ($cmd);
+
+    if ($incremental == 1) {
+        #FIXME: more safe way needed to remove this fake source tar
+        my_system("rm -f $source_tar") if ($source_tar ne "");
+        safe_umount($builddir) if ($incremental == 1);
+    }
+
+    # Save build config to build root for --noinit use
+    my_system("sudo cp $dist_configs/$dist.conf $scratch/$dist.conf") if ($noinit == 0);
+
+    if ($ret == 0) {
+        if (bsd_glob "$scratch/home/abuild/rpmbuild/SRPMS/*.rpm") {
+            my_system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $srpm_repo_path");
+        }
+        if (bsd_glob "$scratch/home/abuild/rpmbuild/RPMS/*/*.rpm") {
+            my_system ("cp $scratch/home/abuild/rpmbuild/RPMS/*/*.rpm $rpm_repo_path");
+        }
+        mkdir_p "$success_logs_path/$name-$version-$release";
+        if (-e "$scratch/.build.log") {
+            my_system ("cp $scratch/.build.log $success_logs_path/$name-$version-$release/log");
+            my_system ("sudo rm -f $scratch/.build.log ");
+        }
+        # Detach and terminate
+        {
+            lock($DETACHING);
+            my_system("$build_dir/createrpmdeps $rpm_repo_path > $order_dir/.repo.cache.local ");
+            my_system("echo D: >> $order_dir/.repo.cache.local");
+            # Merge local repo catch and remote repo cache
+            my_system("cat $order_dir/.repo.cache.local $order_dir/.repo.cache.remote >$order_dir/.repo.cache");
+        }
+        info("finished building $name");
+        $packages_built = 1;
+        return 0;
+    } else {
+        mkdir_p "$fail_logs_path/$name-$version-$release";
+        if ( -f "$scratch/.build.log" ) {
+            my_system ("cp $scratch/.build.log $fail_logs_path/$name-$version-$release/log");
+            my_system ("sudo rm -f $scratch/.build.log");
+            warning("build failed, Leaving the logs in $fail_logs_path/$name-$version-$release/log");
+        }
+        return 1;
+    }
+
+}
+
+sub update_repo
+{
+    #TODO: cleanup repo
+    # * remove duplicated lower version packages
+    # * others
+
+    #create repo data
+    if ($packages_built) {
+        info("updating local repo");
+        createrepo ($arch, $dist);
+    }
+
+}
+sub build_report
+{
+    if (%errors || %expansion_errors || @export_errors) {
+        my $msg = "*** Error Summary ***\n";
+
+        if (@export_errors) {
+            $msg .= "=== the following packages failed to build because export " .
+                "source files to build environment failed ===\n";
+            $msg .= join("\n", @export_errors) . "\n";
+            $msg .= "\n";
+        }
+        if (%expansion_errors) {
+            my $error_pkgs = "";
+            foreach my $pkg (keys %expansion_errors) {
+                $error_pkgs .= "$pkg:\n  " . join("\n  ", @{$expansion_errors{$pkg}}) . "\n";
+            }
+            $msg .= "=== the following packages failed to build due to missing " .
+                "build dependencies ===\n$error_pkgs\n";
+        }
+        if (%errors) {
+            my $error_pkgs = "";
+            foreach my $pkg (keys %errors) {
+                $error_pkgs .= "$pkg: $errors{$pkg}\n";
+            }
+            $msg .= "=== the following packages failed to build due to rpmbuild " .
+                "issue ===\n$error_pkgs";
+        }
+        error($msg);
+    }
+
+    info("generated RPM packages can be found from local repo:\n     $rpm_repo_path");
+    info("generated source RPM packages can be found from local repo:\n     $srpm_repo_path");
+    info("build roots located in:\n     $scratch_dir.*");
+}
+
+
+
+# MAIN
+info("start building packages from: " . $package_path . " ($style)");
+
+if ($style eq 'git') {
+    my @specs = @ARGV;
+    if ($arg_spec ne "") {
+        push @specs, "$path/$packaging_dir/$arg_spec";
+    }
+
+    if ($buildall || @specs == 0) {
+        File::Find::find({wanted => \&git_wanted}, $package_path );
+        if (@original_specs > 1 && ! $commit eq ""){
+            error("--commit option can't be specified with multiple packages");
+        }
+        if (@original_specs == 0) {
+            error("No source package found at $package_path");
+        }
+        push @specs, @original_specs;
+    }
+    if ($incremental == 1) {
+        # No need to prepare git for incremental build
+        foreach my $sp (@specs) {
+            my $packaging = dirname($sp);
+            my $base = dirname($packaging);
+            push(@packs, {
+                    filename => "$sp",
+                    project_base_path => $base,
+                    });
+        }
+    } else {
+        info("prepare sources...");
+        foreach my $sp (@specs) {
+            prepare_git($config, $sp);
+        }
+
+    }
+} else {
+    @packs = @ARGV;
+    if ($buildall || @packs == 0) {
+        File::Find::find({wanted => \&obs_wanted}, $package_path );
+    }
+}
+error("no spec files to build.\n") if (@packs == 0);
+
+if ($clean_repos && -e "$localrepo/$dist/$arch") {
+    info("cleaning up local repo: $rpm_repo_path ...");
+    my_system("rm -rf $rpm_repo_path/*");
+    my_system("rm -rf $srpm_repo_path/*");
+    my_system("rm -rf $success_logs_path/*");
+    my_system("rm -rf $fail_logs_path/*");
+    info("updating local repo ...");
+    createrepo ($arch, $dist);
+}
+
+info("retrieving repo metadata...");
+my $repos_setup = 1;
+my_system("> $order_dir/.repo.cache.local");
+if (-d "$rpm_repo_path") {
+    my_system("$build_dir/createrpmdeps $rpm_repo_path >> $order_dir/.repo.cache.local");
+    my_system("echo D: >> $order_dir/.repo.cache.local");
+}
+my_system("> $order_dir/.repo.cache.remote");
+foreach my $repo (@package_repos) {
+    my $cmd = "";
+    if ($repo =~ /^\// && ! -e "$repo/repodata/repomd.xml") {
+        $cmd = "$build_dir/createrpmdeps $repo >> $order_dir/.repo.cache.remote ";
+    } else {
+        $cmd = "$build_dir/createrepomddeps --cachedir=$cache_dir $repo >> $order_dir/.repo.cache.remote ";
+    }
+    debug($cmd);
+    if ( my_system($cmd) == 0 ) {
+        my_system("echo D: >> $order_dir/.repo.cache.remote");
+    } else {
+        $repos_setup = 0;
+    }
+}
+# Merge local repo cache and remote repo cache
+my_system("cat $order_dir/.repo.cache.local $order_dir/.repo.cache.remote >$order_dir/.repo.cache");
+
+if ($repos_setup == 0 ) {
+    error("repo cache creation failed...");
+}
+
+info("parsing package data...");
+my %packs = parse_packs($config, @packs);
+
+if ($binarylist ne "" && -e $binarylist ) {
+    open my $file, "<", $binarylist or die $!;
+    my @bins = <$file>;
+    chomp(@bins);
+    close($file);
+    my @alldeps = ();
+    my @tobuild = ();
+    foreach my $b (@bins) {
+        next if $b eq "";
+        my $found = 0;
+        foreach my $name (keys %packs) {
+            my @sp = @{$packs{$name}->{subpacks}};
+            my $debuginfo = $b;
+            $debuginfo =~ s/(.*)-debuginfo/$1/;
+            $debuginfo =~ s/(.*)-debugsource/$1/;
+            $debuginfo =~ s/(.*)-docs/$1/;
+            my $nb;
+            if ($b ne $debuginfo) {
+                $nb = $debuginfo;
+            } else {
+                $nb = $b;
+            }
+            if ( grep $_ eq $nb, @sp ) {
+                push(@tobuild, $name);
+                $found = 1 ;
+                last;
+            }
+        }
+        if (!$found) {
+            push(@tofind, $b);
+        }
+    }
+
+    #print $_ . ", " foreach(sort @tobuild);
+    #print "\n";
+    #print $_ . ", " foreach(sort @tofind);
+    #print "\n";
+    foreach my $b (@tobuild) {
+        my @bdeps = expand_deps($packs{$b}->{filename});
+        if (!shift @bdeps ) {
+            debug("expansion error");
+            debug("  $_") for @bdeps;
+        } else {
+            #print $b . ": ";
+            #print $_ . ", " foreach(sort @bdeps);
+            #print "\n";
+            @alldeps = (@bdeps, @alldeps);
+        }
+    }
+    my %hash = map { $_, 1 } @alldeps;
+    my @allbins = keys %hash;
+    #print "Required dependencies: \n ";
+    #print $_ . ", " foreach(sort @allbins);
+    #print "\n";
+    foreach (@allbins) {
+        my $so = source_of($_, %packs);
+        if (defined($so)) {
+            push(@tobuild, $so);
+        }
+    }
+
+    %hash = map { $_, 1 } @tobuild;
+    @tobuild = keys %hash;
+    info ("initial set:");
+    foreach my $p (@tobuild) {
+        print " $p, ";
+    }
+    print "\n";
+    my @final;
+    foreach my $name (@tobuild) {
+        my $fn = $packs{$name}->{filename};
+        if (exists $packs{$name}{project_base_path}) {
+            push(@final, {
+                filename => $fn,
+                project_base_path => $packs{$name}{project_base_path},
+            });
+        } else {
+            push(@final, $fn);
+        }
+    }
+    %to_build = parse_packs($config, @final);
+} elsif ( $binarylist ne "") {
+    error("Cant find binary list for image");
+} else {
+    %to_build = %packs
+}
+
+error("no available packages to build.") if (scalar (keys %to_build) == 0);
+
+if ($incremental == 1 && scalar(keys %to_build) > 1) {
+    error("incremental build only support building one package");
+}
+
+if ($noinit == 1 && scalar(keys %to_build) > 1) {
+    error("--noinit build only support building one package");
+}
+
+# Prepare Workers
+for(my $w = 0; $w < $MAX_THREADS; $w++) {
+    $workers{$w} = { 'state' => 'idle' , 'tid' => undef };
+}
+
+if ( ! -e "$rpm_repo_path" ) {
+    info("creating repo...");
+    createrepo ($arch, $dist);
+}
+
+# only check skipping & overwriting for none noinit/incremental build
+if ($noinit == 0 && $incremental == 0) {
+    foreach my $name (keys %to_build) {
+        my $fn = $to_build{$name}->{filename};
+        my $version = $to_build{$name}->{version};
+        my $release = $to_build{$name}->{release};
+
+        my $src_rpm = "$srpm_repo_path/$name-$version-$release.src.rpm";
+        if (-f $src_rpm) {
+            if ($overwrite) {
+                info("*** overwriting $name-$version-$release $arch ***");
+            } else {
+                info("skipping $name-$version-$release $arch ");
+                push(@skipped, $name);
+            }
+        }
+    }
+}
+
+
+# Signal handling
+$SIG{'INT'} = $SIG{'TERM'} = sub {
+        print("^C captured\n");
+        $TERM=1;
+};
+
+$SIG{'ALRM'} = sub {
+    if (my_system("sudo echo -n") != 0) {
+        error("sudo: failed to request passwd")
+    } else {
+        alarm(SUDOV_PERIOD);
+    }
+};
+
+# trigger 'ALRM' immediately
+kill 'ALRM', $$;
+
+# only one package need to be built, do it directly
+if ($noinit == 1 || $incremental == 1) {
+    my $ret = 0;
+    for my $pkg (keys %to_build) {
+        $ret = worker_thread($pkg, 0, 1);
+        last;
+    }
+    update_repo();
+    build_report();
+    exit $ret;
+}
+
+
+# Create & Update package dependency
+info("building repo metadata ...");
+refresh_repo();
+
+info("package dependency resolving ...");
+update_pkgdeps();
+update_pkgddeps();
+
+if (check_circle() == 1) {
+    info("circle found, exit...");
+    exit 1;
+}
+
+if ($debug) {
+    my $pkg;
+    info("package dependency:");
+    for $pkg (keys %pkgddeps) {
+        print "$pkg:";
+        my $i;
+        for $i (0 .. $#{$pkgddeps{$pkg}}) {
+            print "$pkgddeps{$pkg}[$i] ";
+        }
+        print "\n";
+    }
+}
+
+while (! $TERM) {
+    my @order = ();
+    my @o = ();
+
+    {
+        lock($DETACHING);
+        if ($dirty) {
+            refresh_repo();
+            update_pkgdeps();
+            update_pkgddeps();
+            if (check_circle() == 1) {
+                info("circle found, exit...");
+                exit 1;
+            }
+
+            $dirty = 0;
+        }
+        foreach my $name (keys %to_build) {
+            if( ! (grep $_ eq $name, @done) &&
+                ! (grep $_ eq $name, @skipped) &&
+                ! (grep $_ eq $name, @running))
+            {
+                next if (! exists $pkgddeps{$name});
+                my @bdeps = @{$pkgddeps{$name}};
+                my $add = 1;
+                foreach my $depp (@bdeps) {
+                    if ((! grep($_ eq $depp, @skipped)) &&
+                        (! exists $expansion_errors{$depp}) &&
+                        (! grep($_ eq $depp, @done))) {
+                        #debug("not adding $name, since it depends on $depp");
+                        $add = 0;
+                        last;
+                    }
+                }
+                if ($add == 1 ) {
+                    push(@order, $name);
+                }
+            }
+        }
+        # No candidate packges and all thread works are idle, and pkgdeps
+        # is updated, in this case, set packages in %tmp_expansion_errors
+        # as real expansion_errors, and all packages depend on these packages
+        # can not be blocked.
+        if (@order == 0 && threads->list() == 0 && $dirty == 0) {
+            @expansion_errors{keys %tmp_expansion_errors} = values %tmp_expansion_errors;
+        }
+        if (scalar(keys %to_build) == @done + @skipped +
+            scalar(keys %expansion_errors) && !$dirty) {
+            $TERM = 1;
+        }
+    }
+
+    last if ($TERM);
+
+    if (@order == 0) {
+        # Waiting thread workers done, then re-calculate ready packages
+        sleep(1);
+        next;
+    } else {
+        info("next pass:");
+        foreach my $o (@order) {
+            print $o . "\n";
+        }
+    }
+    if ($dryrun) {
+        exit 1
+    }
+
+    while (@order && ! $TERM) {
+        # Keep max threads running
+        my $needed = $MAX_THREADS - threads->list();
+
+        if ($needed == 0) {
+            # Waiting for build threads finish
+            sleep(1);
+            next;
+        }
+
+        for (; $needed && ! $TERM; $needed--) {
+            my $job = shift(@order);
+            last if (! $job);
+
+            my $worker = find_idle();
+            my $index;
+            {
+                lock($DETACHING);
+                push (@running, $job);
+                $index = scalar(@done) + scalar(@running);
+            }
+            my $thr = threads->create(\&worker_thread, $job, $worker, $index);
+            my $tid = $thr->tid();
+            set_busy($worker, $tid);
+        }
+    }
+
+}
+
+# waiting for threads to finish
+while ((threads->list() > 0)) {
+    sleep(1);
+}
+
+update_repo();
+build_report();
+
+exit 0

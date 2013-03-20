@@ -6,9 +6,9 @@ License:        GPL-2.0+
 Group:          Development/Tools
 Source0:        %{name}_%{version}.tar.gz
 
-Requires:       createrepo >= 0.9.8
+Requires:       createrepo >= 0.9.9
 Requires:       perl(YAML)
-Requires:       tizen-build >= 2012.10.10-tizen20130122
+Requires:       tizen-build >= 2013.03.11-tizen20130319
 %if 0%{?suse_version}
 BuildRequires:  sudo
 %endif

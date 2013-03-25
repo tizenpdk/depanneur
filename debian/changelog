@@ -1,3 +1,11 @@
+depanneur (0.6) unstable; urgency=high
+
+  * fix createrepo option usage issue
+  * depend on new version of obs-build-2013.03.11
+  * depend on createrepo 0.9.9 for deltarpm support
+
+ -- Qiang Zhang <qiang.z.zhang@intel.com>  Mon, 25 Mar 2013 10:56:15 +0800
+
 depanneur (0.5) unstable; urgency=high
 
   * Add --binary-from-file option to specify a package list file

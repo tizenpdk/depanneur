@@ -850,7 +850,7 @@ sub createrepo
         $groups = " --groupfile=$groupfile ";
     }
 
-    my_system ("cd $localrepo/$dist/$arch && rm -rf repodata && createrepo $groups --changelog-limit=0 -q --exclude 'logs/*rpm' . > /dev/null 2>&1 ") == 0
+    my_system ("cd $localrepo/$dist/$arch && rm -rf repodata && createrepo $groups --changelog-limit=0 -q --excludes 'logs/*rpm' . > /dev/null 2>&1 ") == 0
         or die "createrepo failed: $?\n";
 }
 

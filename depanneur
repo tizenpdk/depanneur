@@ -89,6 +89,7 @@ my $dryrun = 0;
 my $help = 0;
 my $keepgoing = 0;
 my $clean_repos = 0;
+my $create_baselibs = 0;
 
 my $virtualenv = "$ENV{'VIRTUAL_ENV'}";
 my $build_root = $ENV{TIZEN_BUILD_ROOT};
@@ -176,6 +177,7 @@ GetOptions (
     "define=s" => \@defines,
     "spec=s" => \$arg_spec,
     "clean-repos" => \$clean_repos,
+    "baselibs" => \$create_baselibs,
     );
 
 if ( $help ) {
@@ -1240,6 +1242,7 @@ sub build_package {
     push @args, "--target $arch";
     push @args, "$srpm_filename";
     push @args, "--ccache" if ($ccache);
+    push @args, "--baselibs" if ($create_baselibs);
     if (! $extra_packs eq "") {
         my $packs = join(' ', split(',', $extra_packs));
         push @args, "--extra-packs=\"$packs\"";

@@ -1046,6 +1046,8 @@ sub update_pkgddeps {
         }
     }
 
+    return if ($deps_build == 0 && $rdeps_build == 0);
+
     for my $pack (sort keys %pkgddeps) {
         $pkgrddeps{$pack} = [];
     }

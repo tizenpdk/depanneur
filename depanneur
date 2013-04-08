@@ -1046,8 +1046,6 @@ sub update_pkgddeps {
         }
     }
 
-    return if ($deps_build == 0 && $rdeps_build == 0);
-
     for my $pack (sort keys %pkgddeps) {
         $pkgrddeps{$pack} = [];
     }
@@ -1082,6 +1080,8 @@ sub update_pkgddeps {
         next if (! defined($pkgddeps{$pkg}));
         for (@{$pkgddeps{$pkg}}) {
             push @{$pkgrdeps{$_}}, @{$pkgrdeps{$pkg}};
+            my %uniq_deps = map {$_,1} @{$pkgrdeps{$_}};
+            $pkgrdeps{$_} = [keys(%uniq_deps)];
         }
     }
 
@@ -1089,6 +1089,8 @@ sub update_pkgddeps {
         next if (! defined($pkgrddeps{$pkg}));
         for (@{$pkgrddeps{$pkg}}) {
             push @{$pkgdeps{$_}}, @{$pkgdeps{$pkg}};
+            my %uniq_deps = map {$_,1} @{$pkgdeps{$_}};
+            $pkgdeps{$_} = [keys(%uniq_deps)];
         }
     }
 }

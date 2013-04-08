@@ -439,7 +439,10 @@ if ( -d "$packaging_dir" && -d ".git" ) {
 }
 
 sub git_wanted {
-    fill_packs_from_git($name) if /^\.git\z/s && -d $_;
+    if( -d "$name/.git" ){
+        fill_packs_from_git("$name/.git");
+        $prune = 1;
+    }
 }
 
 sub obs_wanted {

@@ -100,6 +100,7 @@ my $order_dir = "$build_root/local/order";
 
 my $cache_dir = "$build_root/local/cache";
 my $groupfile="$build_root/meta/group.xml";
+my $patternfile="$build_root/meta/patterns.xml";
 my $build_dir = canonpath("$virtualenv/usr/lib/build");
 $ENV{'BUILD_DIR'} = $build_dir; # must change env variable in main thread
 my $config_filename = "$build_root/meta/local.yaml";
@@ -851,17 +852,19 @@ sub createrepo
 {
     my $arch = shift;
     my $dist = shift;
+    my $extra_opts = "--changelog-limit=0 -q";
 
     my_system("touch $srpm_repo_path");
     my_system("touch $rpm_repo_path");
 
-    my $groups = "";
-    if ( -e $groupfile ) {
-        $groups = " --groupfile=$groupfile ";
+    $extra_opts = $extra_opts . " --update " if ( -e "$localrepo/$dist/$arch/repodata" );
+    $extra_opts = $extra_opts . " --groupfile=$groupfile " if ( -e "$groupfile");
+    my_system ("createrepo $extra_opts $localrepo/$dist/$arch > /dev/null 2>&1 ") == 0 or die "createrepo failed: $?\n";
+    if ( -e $patternfile ) {
+        my_system("rm $localrepo/$dist/$arch/repodata/*patterns.xml.gz -f");
+        my_system("modifyrepo $patternfile $localrepo/$dist/$arch/repodata >/dev/null");
     }
 
-    my_system ("cd $localrepo/$dist/$arch && rm -rf repodata && createrepo $groups --changelog-limit=0 -q --excludes 'logs/*rpm' . > /dev/null 2>&1 ") == 0
-        or die "createrepo failed: $?\n";
 }
 
 sub find_idle {

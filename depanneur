@@ -1401,7 +1401,8 @@ sub build_report
 
         if (@export_errors) {
             $msg .= "=== the following packages failed to build because export " .
-                "source files to build environment failed ===\n";
+                    "source files to build environment failed (" .
+                    scalar(@export_errors) . ") ===\n";
             $msg .= join("\n", @export_errors) . "\n";
             $msg .= "\n";
         }
@@ -1411,7 +1412,7 @@ sub build_report
                 $error_pkgs .= "$pkg:\n  " . join("\n  ", @{$expansion_errors{$pkg}}) . "\n";
             }
             $msg .= "=== the following packages failed to build due to missing " .
-                "build dependencies ===\n$error_pkgs\n";
+                "build dependencies (" . scalar(keys %expansion_errors) . ") ===\n$error_pkgs\n";
         }
         if (%errors) {
             my $error_pkgs = "";
@@ -1419,7 +1420,7 @@ sub build_report
                 $error_pkgs .= "$pkg: $errors{$pkg}\n";
             }
             $msg .= "=== the following packages failed to build due to rpmbuild " .
-                "issue ===\n$error_pkgs";
+                "issue (" . scalar(keys %errors) . ") ===\n$error_pkgs";
         }
         error($msg);
     }

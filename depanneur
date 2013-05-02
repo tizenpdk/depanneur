@@ -585,9 +585,9 @@ sub prepare_git {
         my $tmp_dir = abs_path(tempdir(CLEANUP=>1));
         my $tmp_spec = "$tmp_dir/$spec_file";
         my $without_base = $spec;
-        $without_base =~ s!$base/!!;
+        $without_base =~ s!\Q$base\E/!!;
         if (my_system("cd $base; git show $commit:$without_base >$tmp_spec 2>/dev/null") != 0) {
-            warning("failed to checkout spec file from commit: $commit");
+            warning("failed to checkout spec file from commit: $commit:$without_base");
             return;
         }
         $spec = $tmp_spec;

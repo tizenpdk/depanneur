@@ -352,7 +352,7 @@ if (@repos) {
     }
 }
 
-my $scratch_dir = "$build_root/local/scratch.$arch";
+my $scratch_dir = "$build_root/local/BUILD-ROOTS/scratch.$arch";
 
 # noinit
 if ($noinit == 1) {

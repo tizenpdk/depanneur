@@ -807,6 +807,10 @@ sub expand_deps {
       $packvers = $d->{'version'};
       $subpacks = $d->{'subpacks'};
       @packdeps = @{$d->{'deps'} || []};
+      if ($d->{'prereqs'}) {
+        my %deps = map {$_ => 1} (@packdeps, @{$d->{'subpacks'} || []});
+        push @packdeps, grep {!$deps{$_} && !/^%/} @{$d->{'prereqs'}};
+      }
     }
 
     Build::readdeps($config, undef, \%repo);
@@ -830,6 +834,10 @@ sub get_deps {
     @ndeps = grep {/^-/} @deps;
     my %ndeps = map {$_ => 1} @ndeps;
     @deps = grep {!$ndeps{$_}} @deps;
+    if ($d->{'prereqs'}) {
+        my %deps = map {$_ => 1} (@deps, @{$d->{'subpacks'} || []});
+        push @deps, grep {!$deps{$_} && !/^%/} @{$d->{'prereqs'}};
+    }
     # TBD: Do we need enable this
     # push @deps, @{$config->{'required'}};
     @deps = Build::do_subst($config, @deps);

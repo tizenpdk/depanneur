@@ -841,6 +841,7 @@ sub get_deps {
     # TBD: Do we need enable this
     # push @deps, @{$config->{'required'}};
     @deps = Build::do_subst($config, @deps);
+    @deps = map {s/\s*[<=>]+.*$//s; $_} @deps;
     foreach my $pack (@deps) {
         next if !defined($pack);
         my $pkg;

@@ -126,6 +126,7 @@ my %pkgdeps = ();
 my %pkgddeps = (); # direct dependency dict
 my %pkgrdeps = ();  # expanded reversed dependency dict
 my %pkgrddeps = (); # direct reversed dependency dict
+my %source_cache = (); #package_path:commit_ID = > export_dir
 my %visit    = ();
 my @running :shared = ();
 my @done :shared = ();
@@ -602,6 +603,7 @@ sub prepare_git {
     my $pkg_version = $pack->{version};
     my $pkg_release = $pack->{release};
     my $cache_key = "$pkg_name-$pkg_version-$pkg_release";
+    my $cached_rev = read_cache($cache_key);
     my $skip = 0;
     my $current_rev = '';
 
@@ -610,20 +612,27 @@ sub prepare_git {
         return;
     } else {
         $current_rev = query_git_commit_rev($base, $commit);
-
-        my $cached_rev = read_cache($cache_key);
         $skip = ($cached_rev eq $current_rev) && (-e "$pkg_path/$cache_key/$spec_file");
+        $source_cache{"$base:$cached_rev"} = "$pkg_path/$cache_key" if ($skip);
     }
 
     if (!$skip || $includeall == 1) {
         # Set cache_rev as 'include-all' if --include-all specified
         my $val = ($includeall == 1) ? "include-all" : $current_rev;
         info("start export source from: $base ...");
-        unless (write_cache($cache_key, $val, $base, $spec_file)) {
-            clean_cache($cache_key);
-            debug("$pkg_name was not exported correctly");
-            return;
+        if ($includeall != 1 && exists $source_cache{"$base:$current_rev"}) {
+            my $exported_key = basename($source_cache{"$base:$current_rev"});
+            my_system("cp -r $pkg_path/$exported_key  $pkg_path/$cache_key");
+            my_system("cp -f $pkg_path/cache/$exported_key $pkg_path/cache/$cache_key");
+
+        } else {
+            unless (write_cache($cache_key, $val, $base, $spec_file)) {
+                clean_cache($cache_key);
+                debug("$pkg_name was not exported correctly");
+                return;
+            }
         }
+        $source_cache{"$base:$current_rev"} = "$pkg_path/$cache_key";
     }
     if ( -e "$pkg_path/$cache_key/$spec_file" ){
         push(@packs, {

@@ -1,6 +1,6 @@
 Name:           depanneur
 Summary:        Manages and executes the builds using the obs-build script.
-Version:        0.6
+Version:        0.7
 Release:        1
 License:        GPL-2.0+
 Group:          Development/Tools

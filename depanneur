@@ -931,8 +931,6 @@ sub find_circle {
     my (@stack) = @_;
     my $curpkg = $stack[$#stack];
 
-    return 0 if (exists $tmp_expansion_errors{$curpkg});
-
     my @deps = @{$pkgddeps{$curpkg}};
     my $dep;
 
@@ -965,8 +963,6 @@ sub check_circle {
     my $pkg;
     my $reset_visit = sub {
         for my $pkg (keys %pkgddeps) {
-            # Skip expansion error packages
-            next if (exists $tmp_expansion_errors{$pkg});
             $visit{$pkg} = 0;
         }
     };
@@ -1024,7 +1020,11 @@ sub update_pkgdeps
 {
     %tmp_expansion_errors = ();
     foreach my $name (keys %to_build) {
-        next if (defined $pkgdeps{$name});
+        if( (grep $_ eq $name, @done) ||
+            (grep $_ eq $name, @skipped) ||
+            (grep $_ eq $name, @running)) {
+            next;
+        }
         if(! (grep $_ eq $name, @skipped)) {
             my $fn = $to_build{$name}->{filename};
             debug("Checking dependencies for $name");
@@ -1051,8 +1051,6 @@ sub update_pkgdeps
 
 sub update_pkgddeps {
     foreach my $name (keys %to_build) {
-        # Skip expansion error packages
-        next if (exists $tmp_expansion_errors{$name});
         if(! (grep $_ eq $name, @skipped)) {
             my $fn = $to_build{$name}->{filename};
             my @bdeps = get_deps($fn);
@@ -1061,8 +1059,7 @@ sub update_pkgddeps {
                 my $so = source_of($depp, %to_build);
                 if (defined($so) && $name ne $so
                     && (! grep($_ eq $so, @skipped))
-                    && (! grep($_ eq $so, @deps))
-                    && (! exists $tmp_expansion_errors{$so})) {
+                    && (! grep($_ eq $so, @deps))) {
                     push (@deps, $so);
                 }
             }
@@ -1646,6 +1643,9 @@ if ($noinit == 0 && $incremental == 0) {
             }
         }
     }
+    # refresh pkgdeps to remove skipped packages
+    update_pkgdeps();
+    update_pkgddeps();
 }
 
 
@@ -1724,7 +1724,7 @@ while (! $TERM) {
                 ! (grep $_ eq $name, @skipped) &&
                 ! (grep $_ eq $name, @running))
             {
-                next if (! exists $pkgddeps{$name});
+                next if (exists $tmp_expansion_errors{$name});
                 my @bdeps = @{$pkgddeps{$name}};
                 my $add = 1;
                 foreach my $depp (@bdeps) {

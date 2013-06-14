@@ -1746,11 +1746,12 @@ while (! $TERM) {
         # as real expansion_errors, and all packages depend on these packages
         # can not be blocked.
         if (@order == 0 && threads->list() == 0 && $dirty == 0) {
+            %expansion_errors = ();
             @expansion_errors{keys %tmp_expansion_errors} = values %tmp_expansion_errors;
-        }
-        if (scalar(keys %to_build) == @done + @skipped +
-            scalar(keys %expansion_errors) && !$dirty) {
-            $TERM = 1;
+            if (scalar(keys %to_build) == @done + @skipped +
+                scalar(keys %expansion_errors) && !$dirty) {
+                $TERM = 1;
+            }
         }
     }
 

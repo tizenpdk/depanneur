@@ -794,6 +794,7 @@ sub refresh_repo {
       $repo{$pack} = $r;
     }
 
+    Build::readdeps($config, undef, \%repo);
 }
 
 sub expand_deps {
@@ -821,8 +822,6 @@ sub expand_deps {
         push @packdeps, grep {!$deps{$_} && !/^%/} @{$d->{'prereqs'}};
       }
     }
-
-    Build::readdeps($config, undef, \%repo);
 
     #######################################################################
     my @extradeps = ();

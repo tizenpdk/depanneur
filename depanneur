@@ -1256,6 +1256,13 @@ sub build_package {
     } else {
         warning("depanneur only support linux platform");
     }
+    my $target_arch=`$build_dir/getchangetarget --dist $dist --configdir $dist_configs --archpath $arch`;
+    chomp $target_arch;
+    if ($target_arch eq "") {
+        push @args, "--target $arch";
+    } else {
+        push @args, "--target $target_arch";
+    }
     push @args, "--jobs " . $nprocessors * 2;
     push @args, "--no-init" if ($noinit == 1);
     push @args, "--keep-packs" if ($keep_packs == 1);
@@ -1263,7 +1270,6 @@ sub build_package {
     push @args, "--dist $dist";
     push @args, "--configdir $dist_configs";
     push @args, "--arch $archpath";
-    push @args, "--target $arch";
     push @args, "$srpm_filename";
     push @args, "--ccache" if ($ccache);
     push @args, "--baselibs" if ($create_baselibs);

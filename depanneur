@@ -1301,6 +1301,7 @@ sub build_package {
         $redirect = "> /dev/null 2>&1";
     }
 
+    push @args, "--debug";
     push @args, "--root $scratch";
     if ($noinit == 1 && -e "$scratch/not-ready") {
         error("build root is not ready , --noinit is not allowed");

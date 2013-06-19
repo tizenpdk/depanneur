@@ -735,7 +735,7 @@ sub refresh_repo {
         next if $req{$1};
         $req{$1} = $2;
       } elsif (/^I:(.*?)-\d+\/\d+\/\d+: (.*)$/) {
-        if ($ids{$1} && $packs_done{$1} && defined($pkgF) && defined($pkgP) && defined($pkgR)) {
+        if ($ids{$1} && !$packs_done{$1} && defined($pkgF) && defined($pkgP) && defined($pkgR)) {
           my $i = $1;
           my $oldid = $ids{$1};
           my $newid = $2;

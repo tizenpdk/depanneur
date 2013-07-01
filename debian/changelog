@@ -1,3 +1,18 @@
+depanneur (0.8) unstable; urgency=high
+
+  * create debug package by default
+  * refinement:
+    - report circle in time
+    - load dependency data during refresh repo, instead of during parsing every
+      spec file
+  * bug fix:
+    - get target arch from build conf if 'Target' is set in build config, which
+      make gbs and remote obs generate the same arch for final RPM package
+    - exit unexpectedly if circle exist
+    - using higer version in different repo
+
+ -- Qiang Zhang <qiang.z.zhang@intel.com>  Mon, 1 Jul 2013 10:56:15 +0800
+
 depanneur (0.7) unstable; urgency=high
 
   * avoid export multiple times for packages contails multiple spec files

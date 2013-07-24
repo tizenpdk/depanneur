@@ -1267,8 +1267,7 @@ sub build_package {
     push @args, "--no-init" if ($noinit == 1);
     push @args, "--keep-packs" if ($keep_packs == 1);
     push @args, "--cachedir $cache_dir";
-    push @args, "--dist $dist";
-    push @args, "--configdir $dist_configs";
+    push @args, "--dist $dist_configs/$dist.conf";
     push @args, "--arch $archpath";
     push @args, "$srpm_filename";
     push @args, "--ccache" if ($ccache);

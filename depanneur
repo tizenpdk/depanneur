@@ -367,6 +367,7 @@ if ($noinit == 1) {
     $dist = readline($file);
     close($file);
     chomp $dist;
+    $dist =~ s!^.*/(.*)\.conf!$1!;
     $dist_configs= "$scratch";
     if (! -e "$dist_configs/$dist.conf") {
         error("build root broken caused by missing build conf. Please build without --noinit first");

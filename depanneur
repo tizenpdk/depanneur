@@ -430,6 +430,8 @@ my @archs = @{$archpolicies{$arch}};
 my $archpath = join(":", @archs);
 
 my $config = Build::read_config_dist($dist, $archpath, $dist_configs);
+# We're not building inside OBS, set the de-facto "obs macro" accordingly
+push @{$config->{'macros'}}, "%define opensuse_bs 0";
 
 if ( -d "$packaging_dir" && -d ".git" ) {
     $package_path = cwd();

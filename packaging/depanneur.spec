@@ -12,6 +12,7 @@ Requires:       tizen-build >= 2013.03.11-tizen20130319
 %if 0%{?suse_version}
 BuildRequires:  sudo
 %endif
+BuildArch:      noarch
 Autoreq:        0
 %description
 The depanneur tool goes through local Git trees and evaluates packaging
@@ -29,7 +30,7 @@ build mode and incremental build mode.
 %setup -q
 
 %install
-make install DESTDIR=$RPM_BUILD_ROOT
+%make_install
 
 %files
 %defattr(-,root,root,-)

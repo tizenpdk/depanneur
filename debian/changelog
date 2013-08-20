@@ -1,3 +1,9 @@
+depanneur (0.9) unstable; urgency=high
+
+  * Define the de-facto %opensuse_bs macro from OBS to be zero
+
+ -- Qiang Zhang <qiang.z.zhang@intel.com>  Tue, 20 Aug 2013 10:56:15 +0800
+
 depanneur (0.8) unstable; urgency=high
 
   * create debug package by default

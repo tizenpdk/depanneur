@@ -580,16 +580,15 @@ sub query_git_commit_rev {
 sub prepare_git {
     my $config = shift;
     my $spec = shift;
-
-    my $packaging = dirname($spec);
-    my $base = dirname($packaging);
-
     my $spec_file = basename($spec);
+    my $base = dirname($spec);
+    $base =~ s!\Q$packaging_dir\E!!;
+
     if ($includeall == 0) {
         my $tmp_dir = abs_path(tempdir(CLEANUP=>1));
         my $tmp_spec = "$tmp_dir/$spec_file";
         my $without_base = $spec;
-        $without_base =~ s!\Q$base\E/!!;
+        $without_base ="$packaging_dir/$spec_file";
         if (my_system("cd $base; git show $commit:$without_base >$tmp_spec 2>/dev/null") != 0) {
             warning("failed to checkout spec file from commit: $commit:$without_base");
             return;

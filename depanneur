@@ -710,7 +710,7 @@ sub parse_packs {
 sub refresh_repo {
     my $rpmdeps = "$order_dir/.repo.cache";
     my (%fn, %prov, %req);
-
+    my %exportfilters = %{$config->{'exportfilter'}};
     my %packs;
     my %ids;
 
@@ -722,12 +722,24 @@ sub refresh_repo {
     while(<$fh>) {
       chomp;
       if (/^F:(.*?)-\d+\/\d+\/\d+: (.*)$/) {
+        my $pkgname = basename($2);
         $pkgF = $2;
         next if $fn{$1};
         $fn{$1} = $2;
         my $pack = $1;
         $pack =~ /^(.*)\.([^\.]+)$/ or die;
         push @{$packs_arch{$2}}, $1;
+        my $basename = $1;
+        my $arch = $2;
+        for(keys %exportfilters) {
+            next if ($pkgname !~ /$_/);
+            for (@{$exportfilters{$_}}) {
+                my $target_arch = $_;
+                next if ($target_arch eq ".");
+                next if (! grep ($_ eq $target_arch, @archs));
+                $packs{$basename} = "$basename.$arch"
+            }
+        }
       } elsif (/^P:(.*?)-\d+\/\d+\/\d+: (.*)$/) {
         $pkgP = $2;
         next if $prov{$1};

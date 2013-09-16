@@ -8,7 +8,11 @@ Source0:        %{name}_%{version}.tar.gz
 
 Requires:       createrepo >= 0.9.8
 Requires:       perl(YAML)
+%if 0%{?suse_version} >= 1230
+Requires:       tizen-build >= 20130311-tizen20130916
+%else
 Requires:       tizen-build >= 2013.03.11-tizen20130916
+%endif
 %if 0%{?suse_version}
 BuildRequires:  sudo
 %endif

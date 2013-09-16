@@ -1,3 +1,11 @@
+depanneur (0.9.1) unstable; urgency=high
+
+  * support ExportFilter in build.conf
+  * support multiple level packaging dir for --packaging-dir option
+  * depend on new version of build script
+
+ -- Qiang Zhang <qiang.z.zhang@intel.com>  Mon, 16 Sep 2013 10:56:15 +0800
+
 depanneur (0.9) unstable; urgency=high
 
   * Define the de-facto %opensuse_bs macro from OBS to be zero

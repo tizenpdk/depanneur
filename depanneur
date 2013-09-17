@@ -1381,11 +1381,16 @@ sub build_package {
     my_system("sudo /bin/cp $dist_configs/$dist.conf $scratch/$dist.conf") if ($noinit == 0);
 
     if ($ret == 0) {
-        if (bsd_glob "$scratch/home/abuild/rpmbuild/SRPMS/*.rpm") {
-            my_system ("cp $scratch/home/abuild/rpmbuild/SRPMS/*.rpm $srpm_repo_path");
+        # Set the real path of RPMS and SRPMS
+        my $rpmdirpath = `sudo chroot $scratch su -c "rpm --eval %{_rpmdir} 2>/dev/null" - abuild`;
+        my $srcrpmdirpath = `sudo chroot $scratch su -c "rpm --eval %{_srcrpmdir} 2>/dev/null" - abuild`;
+        chomp($rpmdirpath);
+        chomp($srcrpmdirpath);
+        if (bsd_glob "$scratch/$srcrpmdirpath/*.rpm") {
+            my_system ("cp $scratch/$srcrpmdirpath/*.rpm $srpm_repo_path");
         }
-        if (bsd_glob "$scratch/home/abuild/rpmbuild/RPMS/*/*.rpm") {
-            my_system ("cp $scratch/home/abuild/rpmbuild/RPMS/*/*.rpm $rpm_repo_path");
+        if (bsd_glob "$scratch/$rpmdirpath/*/*.rpm") {
+            my_system ("cp $scratch/$rpmdirpath/*/*.rpm $rpm_repo_path");
         }
         mkdir_p "$success_logs_path/$name-$version-$release";
         if (-e "$scratch/.build.log") {

@@ -1481,7 +1481,7 @@ sub get_binary_list() {
             die "Cant open binary list file $binary_from_file: $!\n";
         my @lines = <$file>;
         chomp(@lines);
-        push @bins, @lines;
+        push @bins, grep {!/^#.*$/} @lines;
     }
 
     if ($binarylist ne "") {

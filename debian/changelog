@@ -1,3 +1,11 @@
+depanneur (0.10) unstable; urgency=high
+
+  * Remove hard code of _rpmdir in build root, use chroot to detect instead
+  * Support comments (#) in binary-list file for --binary-from-file option
+  * Remove previous built rpm and srpm if new version has been built out
+
+ -- Qiang Zhang <qiang.z.zhang@intel.com>  Wed, 16 Otc 2013 10:56:15 +0800
+
 depanneur (0.9) unstable; urgency=high
 
   * Define the de-facto %opensuse_bs macro from OBS to be zero

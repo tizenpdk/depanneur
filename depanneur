@@ -127,6 +127,8 @@ my %pkgddeps = (); # direct dependency dict
 my %pkgrdeps = ();  # expanded reversed dependency dict
 my %pkgrddeps = (); # direct reversed dependency dict
 my %source_cache = (); #package_path:commit_ID = > export_dir
+my %rpmpaths = ();  # dict to store map from pkg name to rpm paths in local repo
+my %srpmpaths = ();  # dict to store map from pkg name to srpm paths in local repo
 my %visit    = ();
 my @running :shared = ();
 my @done :shared = ();
@@ -1239,6 +1241,31 @@ sub mount_source_check {
     }
 }
 
+sub get_pkg_info {
+    my $package = shift;
+    if ($package =~ /\/([^\/]+)-([^-]+)-([^-]+)\.(\w+)\.rpm$/) {
+        return ($1, $2, $3, $4);
+    } else {
+        return ;
+    }
+}
+
+sub update_repo_with_rpms {
+    # $1: ref of hash from pkg to path list
+    # $2: list of package full path
+    my ($ref_hash, @pkgs) = @_;
+    foreach my $pkg (@pkgs) {
+        my ($name, $version, $release) = get_pkg_info $pkg;
+        next if $name eq '';
+        if (exists $ref_hash->{$name}) {
+            foreach (@{$ref_hash->{$name}}) {
+                my_system("rm -rf $_");
+            }
+        }
+        $ref_hash->{$name} = [$pkg];
+    }
+}
+
 sub build_package {
     my ($name, $thread, $index) = @_;
     use vars qw(@package_repos);
@@ -1386,12 +1413,6 @@ sub build_package {
         my $srcrpmdirpath = `sudo chroot $scratch su -c "rpm --eval %{_srcrpmdir} 2>/dev/null" - abuild`;
         chomp($rpmdirpath);
         chomp($srcrpmdirpath);
-        if (bsd_glob "$scratch/$srcrpmdirpath/*.rpm") {
-            my_system ("cp $scratch/$srcrpmdirpath/*.rpm $srpm_repo_path");
-        }
-        if (bsd_glob "$scratch/$rpmdirpath/*/*.rpm") {
-            my_system ("cp $scratch/$rpmdirpath/*/*.rpm $rpm_repo_path");
-        }
         mkdir_p "$success_logs_path/$name-$version-$release";
         if (-e "$scratch/.build.log") {
             my_system ("cp $scratch/.build.log $success_logs_path/$name-$version-$release/log");
@@ -1400,6 +1421,15 @@ sub build_package {
         # Detach and terminate
         {
             lock($DETACHING);
+            if (my @rpms = bsd_glob "$scratch/home/abuild/rpmbuild/SRPMS/*.rpm") {
+                update_repo_with_rpms (\%rpmpaths, @rpms);
+                my_system ("cp $scratch/$srcrpmdirpath/*.rpm $srpm_repo_path");
+            }
+            if (my @srpms = bsd_glob "$scratch/home/abuild/rpmbuild/RPMS/*/*.rpm") {
+                update_repo_with_rpms(\%srpmpaths, @srpms);
+                my_system ("cp $scratch/$rpmdirpath/*/*.rpm $rpm_repo_path");
+            }
+
             my_system("$build_dir/createrpmdeps $rpm_repo_path > $order_dir/.repo.cache.local ");
             my_system("echo D: >> $order_dir/.repo.cache.local");
             # Merge local repo catch and remote repo cache
@@ -1692,6 +1722,26 @@ kill 'ALRM', $$;
 
 for(my $i = 0; $i < $MAX_THREADS; $i++) {
     mount_source_check("$scratch_dir.$i");
+}
+
+# scan local repo
+for my $pkg (bsd_glob "$rpm_repo_path/*.rpm") {
+    my ($name, $version, $release) = get_pkg_info $pkg;
+    next if $name eq '';
+    if (exists $rpmpaths{$name}) {
+        push @{$rpmpaths{$name}}, $pkg;
+    } else {
+        $rpmpaths{$name} = [$pkg];
+    }
+}
+for my $pkg (bsd_glob "$srpm_repo_path/*.rpm") {
+    my ($name, $version, $release) = get_pkg_info $pkg;
+    next if $name eq '';
+    if (exists $srpmpaths{$name}) {
+        push @{$srpmpaths{$name}}, $pkg;
+    } else {
+        $srpmpaths{$name} = [$pkg];
+    }
 }
 
 # only one package need to be built, do it directly

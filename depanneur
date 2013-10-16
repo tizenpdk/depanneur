@@ -1421,12 +1421,12 @@ sub build_package {
         # Detach and terminate
         {
             lock($DETACHING);
-            if (my @rpms = bsd_glob "$scratch/home/abuild/rpmbuild/SRPMS/*.rpm") {
-                update_repo_with_rpms (\%rpmpaths, @rpms);
+            if (my @srpms = bsd_glob "$scratch/$srcrpmdirpath/*.rpm") {
+                update_repo_with_rpms(\%srpmpaths, @srpms);
                 my_system ("cp $scratch/$srcrpmdirpath/*.rpm $srpm_repo_path");
             }
-            if (my @srpms = bsd_glob "$scratch/home/abuild/rpmbuild/RPMS/*/*.rpm") {
-                update_repo_with_rpms(\%srpmpaths, @srpms);
+            if (my @rpms = bsd_glob "$scratch/$rpmdirpath/*/*.rpm") {
+                update_repo_with_rpms (\%rpmpaths, @rpms);
                 my_system ("cp $scratch/$rpmdirpath/*/*.rpm $rpm_repo_path");
             }
 

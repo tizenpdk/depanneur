@@ -673,6 +673,10 @@ sub parse_packs {
             warning($pack->{name} . ": build arch not compatible: " . join(" ", @{$pack->{'exclarch'}}));
             next;
         }
+        if ( ( $pack->{'badarch'} ) &&  ( grep $_ eq $archs[0], @{$pack->{'badarch'}} ) ) {
+            warning($pack->{name} . ": build arch not compatible: " . join(" ", @{$pack->{'badarch'}}));
+            next;
+        }
         my $name = $pack->{name};
         my $version = $pack->{version};
         my $release = $pack->{release};

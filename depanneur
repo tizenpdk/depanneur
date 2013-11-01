@@ -3,6 +3,7 @@
 use strict;
 use warnings;
 use File::Spec::Functions;
+use JSON;
 
 BEGIN {
   my ($wd) = $0 =~ m-(.*)/- ;
@@ -137,10 +138,12 @@ my @original_specs = ();
 
 my @cleaned : shared = ();
 my %errors :shared;
+my %succeeded :shared;
 my %expansion_errors = ();
 my @export_errors;
 my %tmp_expansion_errors = ();
 my $packages_built :shared  = 0;
+my %build_status_json = ();
 my %workers = ();
 
 
@@ -543,7 +546,9 @@ sub write_cache {
     my $cache_fname = "$cache_path/$cache_key";
 
     if (gbs_export($base, $spec) != 0) {
-        push(@export_errors, $cache_key);
+        push(@export_errors, {package_name => $cache_key,
+                              package_path => $base,
+                              error_info   => "N/A"}); # TODO
         return;
     }
 
@@ -1188,18 +1193,19 @@ sub worker_thread {
 
     {
         lock($DETACHING);
+        my $version = $to_build{$name}->{version};
+        my $release = $to_build{$name}->{release};
         threads->detach() if ! threads->is_detached();
         @running = grep { $_ ne "$name"} @running;
         push(@done, $name);
         if ($status == 0) {
             $dirty = 1;
+            $succeeded{"$name"} = "$localrepo/$dist/$arch/logs/success/$name-$version-$release/log";
         } else {
-            my $version = $to_build{$name}->{version};
-            my $release = $to_build{$name}->{release};
             if (-f "$localrepo/$dist/$arch/logs/fail/$name-$version-$release/log") {
-                $errors{"$name-$dist-$arch"} = "$localrepo/$dist/$arch/logs/fail/$name-$version-$release/log"
+                $errors{"$name"} = "$localrepo/$dist/$arch/logs/fail/$name-$version-$release/log"
             } else {
-                $errors{"$name-$dist-$arch"} = "";
+                $errors{"$name"} = "";
             }
         }
     }
@@ -1463,22 +1469,46 @@ sub update_repo
     }
 
 }
+
+sub build_json_report
+{
+        info("generate html format report" );
+        open(my $report_json, '>', "$localrepo/$dist/$arch/report.json");
+        print $report_json to_json(\%build_status_json);
+        close($report_json);
+}
+
 sub build_report
 {
     if (%errors || %expansion_errors || @export_errors) {
         my $msg = "*** Error Summary ***\n";
 
+        my $total_packages = scalar(keys %to_build) - scalar (@skipped) + scalar (@export_errors);
+        my $succeeded_packages = scalar(keys %succeeded);
+        my $num_export_errors = scalar(@export_errors);
+        my $num_expansion_errors = scalar(keys %expansion_errors);
+        my $num_build_errors = scalar(keys %errors);
+        my @export_details= ();
+        my @expansion_details= ();
+        my @build_details = ();
+
         if (@export_errors) {
             $msg .= "=== the following packages failed to build because export " .
                     "source files to build environment failed (" .
                     scalar(@export_errors) . ") ===\n";
-            $msg .= join("\n", @export_errors) . "\n";
+            foreach my $pkg (@export_errors) {
+                $msg .= $pkg->{"package_name"} . "\n";
+            }
             $msg .= "\n";
         }
         if (%expansion_errors) {
             my $error_pkgs = "";
             foreach my $pkg (keys %expansion_errors) {
                 $error_pkgs .= "$pkg:\n  " . join("\n  ", @{$expansion_errors{$pkg}}) . "\n";
+                push @expansion_details, { package_name => $pkg,
+                                 package_path => $to_build{$pkg}->{project_base_path},
+                                 error_info => join("<br>", @{$expansion_errors{$pkg}}),
+                               };
             }
             $msg .= "=== the following packages failed to build due to missing " .
                 "build dependencies (" . scalar(keys %expansion_errors) . ") ===\n$error_pkgs\n";
@@ -1487,10 +1517,43 @@ sub build_report
             my $error_pkgs = "";
             foreach my $pkg (keys %errors) {
                 $error_pkgs .= "$pkg: $errors{$pkg}\n";
+                my $log =  $errors{$pkg};
+                $log =~ s!\Q$localrepo/$dist/$arch/\E!!;
+                push @build_details, { package_name => $pkg,
+                                 package_path => $to_build{$pkg}->{project_base_path},
+                                 succeeded => 0,
+                                 log_path => $log,
+                               };
             }
             $msg .= "=== the following packages failed to build due to rpmbuild " .
                 "issue (" . scalar(keys %errors) . ") ===\n$error_pkgs";
         }
+
+        foreach my $pkg (keys %succeeded) {
+            my $log =  $succeeded{$pkg};
+            $log =~ s!\Q$localrepo/$dist/$arch/\E!!;
+            push @build_details, { package_name => $pkg,
+                             package_path => $to_build{$pkg}->{project_base_path},
+                             succeeded => 1,
+                             log_path => $log,
+                           };
+        }
+
+        # fill json data structure
+        $build_status_json{"build_profile"} = $dist;
+        $build_status_json{"build_arch"} = $arch;
+        $build_status_json{"summary"} = { packages_total => $total_packages,
+                                          packages_succeeded => $succeeded_packages,
+                                          packages_export_error  => $num_export_errors,
+                                          packages_expansion_error => $num_expansion_errors,
+                                          packages_build_error => $num_build_errors
+                                         };
+
+        $build_status_json{"export_details"} = \@export_errors;
+        $build_status_json{"expansion_details"} = \@expansion_details;
+        $build_status_json{"build_details"} = \@build_details;
+
+        build_json_report();
         error($msg);
     }
 

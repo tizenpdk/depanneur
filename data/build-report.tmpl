@@ -1,0 +1,125 @@
+<html>
+
+<head>
+<title>GBS Build Report</title>
+<style>
+.failed { color: red }
+.succeeded { color: green }
+table {
+    border-collapse:collapse;
+    margin-bottom: 1em;
+}
+
+th { background-color: #F3F3F3 }
+td, th {
+    border: 1px solid grey;
+    padding: 3px
+}
+
+table.middle th { text-align: left }
+
+</style>
+
+</head>
+
+<body>
+
+
+<h1 align="center" >GBS Local Full Build Report</h1>
+
+<p><B>Profile:</B> <TMPL_VAR build_profile></p>
+<p><B>Arch:</B> <TMPL_VAR build_arch></p>
+
+<h3>Build Status Summary</h3>
+
+<table class = middle>
+    <tr>
+        <th>Total Packages</th>
+        <th>succeeded Packages</th>
+        <th>Export Error Packages</th>
+        <th>Expansion Error Packages</th>
+        <th>Build Error Packages</th>
+    </tr>
+    <tr>
+        <td><TMPL_VAR packages_total></td>
+        <td><TMPL_VAR packages_succeeded></td>
+        <td><TMPL_VAR packages_export_error></td>
+        <td><TMPL_VAR packages_expansion_error></td>
+        <td><TMPL_VAR packages_build_error></td>
+    </tr>
+</table>
+
+
+<tmpl_if name=have_export_errors>
+<h3>Export error details</h3>
+The following packages can't be exported correctly:
+    <table class = middle>
+        <thead>
+            <tr>
+                <th>Package name</th>
+                <th>Package path</th>
+                <th>Export error</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tmpl_loop export_details>
+              <tr>
+                <td><tmpl_var package_name></td>
+                <td><tmpl_var package_path></td>
+                <td><tmpl_var error_info></td>
+              </tr>
+            </tmpl_loop>
+        </tbody>
+    </table>
+</tmpl_if>
+
+
+<tmpl_if name=have_expansion_errors>
+<h3>Expansion error details</h3>
+The following packages have build dependencies issue:
+    <table class = middle>
+        <thead>
+            <tr>
+                <th>Package name</th>
+                <th>Package path</th>
+                <th>Expansion error</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tmpl_loop expansion_details>
+              <tr>
+                <td><tmpl_var package_name></td>
+                <td><tmpl_var package_path></td>
+                <td><tmpl_var error_info></td>
+              </tr>
+            </tmpl_loop>
+        </tbody>
+    </table>
+</tmpl_if>
+
+<h3>Build Statis Details</h3>
+<table class = middle>
+    <thead>
+        <tr>
+            <th>Package Name</th>
+            <th>Package Path</th>
+            <th>Build Status</th>
+        </tr>
+    </thead>
+    <tbody>
+        <TMPL_LOOP build_details>
+          <tr>
+            <td><TMPL_VAR package_name></td>
+            <td><TMPL_VAR package_path></td>
+            <TMPL_IF NAME="succeeded">
+                <td><a href=<TMPL_VAR log_path> class = succeeded> Succeeded </a> </td>
+            <TMPL_ELSE>
+                <td><a href=<TMPL_VAR log_path> class = failed> Failed </a> </td>
+            </TMPL_IF>
+          </tr>
+        </TMPL_LOOP>
+    </tbody>
+</table>
+</body>
+
+</html>

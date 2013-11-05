@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use File::Spec::Functions;
 use JSON;
+use HTML::Template;
 
 BEGIN {
   my ($wd) = $0 =~ m-(.*)/- ;
@@ -1470,6 +1471,46 @@ sub update_repo
 
 }
 
+sub build_html_report
+{
+    my $template_file = "/usr/share/depanneur/build-report.tmpl";
+
+    if (! -e $template_file) {
+        warning("html template $template_file does not exist.");
+        return;
+    }
+
+    # generate html format report
+    my $tmpl = HTML::Template->new(filename => $template_file);
+    $tmpl->param(
+        build_profile => $build_status_json{"build_profile"},
+        build_arch => $build_status_json{"build_arch"},
+        );
+
+    $tmpl->param($build_status_json{"summary"});
+
+    if (@export_errors) {
+        $tmpl->param( have_export_errors => 1,
+                export_details => $build_status_json{"export_details"}
+                );
+    }
+
+    if (%expansion_errors) {
+    $tmpl->param( have_expansion_errors => 1,
+                  expansion_details => $build_status_json{"expansion_details"}
+                );
+    }
+
+    $tmpl->param(
+        build_details => $build_status_json{"build_details"}
+    );
+
+    open(my $report_html, '>', "$localrepo/$dist/$arch/index.html");
+    $tmpl->output(print_to => $report_html);
+    close($report_html);
+}
+
+
 sub build_json_report
 {
         info("generate html format report" );
@@ -1553,6 +1594,7 @@ sub build_report
         $build_status_json{"expansion_details"} = \@expansion_details;
         $build_status_json{"build_details"} = \@build_details;
 
+        build_html_report();
         build_json_report();
         error($msg);
     }

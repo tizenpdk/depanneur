@@ -34,5 +34,7 @@ build mode and incremental build mode.
 
 %files
 %defattr(-,root,root,-)
+%dir %{_datadir}/depanneur
 %{_bindir}/depanneur
 %{_sysconfdir}/sudoers.d/gbs
+%{_datadir}/depanneur/build-report.tmpl

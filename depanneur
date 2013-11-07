@@ -273,15 +273,24 @@ sub my_system {
     my $cmd = shift;
     debug("my_system: $cmd");
     my $ret;
-    defined(my $pid=fork) or die "Can not fork: $!\n";
-    unless ($pid) {
+    my @out = ();
+
+    defined(my $pid=open(PIPE, "-|")) or die "Can not fork: $!\n";
+    unless ($pid) {  # Child
+        open(STDERR, ">&STDOUT");
         exec ($cmd);
         exit -1;
+    } else {  # Parent
+        while (my $line = <PIPE>) {
+            print $line;
+            push @out, $line if wantarray;
+        }
+        waitpid ($pid,0);
+        $ret = $?;
+        close(PIPE);
+
+        return wantarray ? ($ret, @out): $ret;
     }
-    waitpid ($pid,0);
-    $ret = WIFEXITED($?);
-    $ret = $?;
-    return $ret;
 }
 
 sub expand_filename {

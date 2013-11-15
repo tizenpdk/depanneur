@@ -1535,91 +1535,92 @@ sub build_json_report
 
 sub build_report
 {
-    if (%errors || %expansion_errors || @export_errors) {
-        my $msg = "*** Error Summary ***\n";
+    my $msg = "*** Error Summary ***\n";
 
-        my $total_packages = scalar(keys %to_build) - scalar (@skipped) + scalar (@export_errors);
-        my $succeeded_packages = scalar(keys %succeeded);
-        my $num_export_errors = scalar(@export_errors);
-        my $num_expansion_errors = scalar(keys %expansion_errors);
-        my $num_build_errors = scalar(keys %errors);
-        my @export_details= ();
-        my @expansion_details= ();
-        my @build_details = ();
+    my $total_packages = scalar(keys %to_build) - scalar (@skipped) + scalar (@export_errors);
+    my $succeeded_packages = scalar(keys %succeeded);
+    my $num_export_errors = scalar(@export_errors);
+    my $num_expansion_errors = scalar(keys %expansion_errors);
+    my $num_build_errors = scalar(keys %errors);
+    my @export_details= ();
+    my @expansion_details= ();
+    my @build_details = ();
 
-        if (@export_errors) {
-            $msg .= "=== the following packages failed to build because export " .
-                    "source files to build environment failed (" .
-                    scalar(@export_errors) . ") ===\n";
-            foreach my $pkg (@export_errors) {
-                $msg .= $pkg->{"package_name"} . "\n";
-                push @export_details, { package_name => $pkg->{"package_name"},
-                                        package_path => $pkg->{"package_path"},
-                                        error_info => join("<br>", @{$pkg->{"error_info"}}),
-                                      };
-            }
-            $msg .= "\n";
+    if (@export_errors) {
+        $msg .= "=== the following packages failed to build because export " .
+                "source files to build environment failed (" .
+                scalar(@export_errors) . ") ===\n";
+        foreach my $pkg (@export_errors) {
+            $msg .= $pkg->{"package_name"} . "\n";
+            push @export_details, { package_name => $pkg->{"package_name"},
+                                    package_path => $pkg->{"package_path"},
+                                    error_info => join("<br>", @{$pkg->{"error_info"}}),
+                                  };
         }
-        if (%expansion_errors) {
-            my $error_pkgs = "";
-            foreach my $pkg (keys %expansion_errors) {
-                $error_pkgs .= "$pkg:\n  " . join("\n  ", @{$expansion_errors{$pkg}}) . "\n";
-                push @expansion_details, { package_name => $pkg,
-                                 package_path => $to_build{$pkg}->{project_base_path},
-                                 error_info => join("<br>", @{$expansion_errors{$pkg}}),
-                               };
-            }
-            $msg .= "=== the following packages failed to build due to missing " .
-                "build dependencies (" . scalar(keys %expansion_errors) . ") ===\n$error_pkgs\n";
+        $msg .= "\n";
+    }
+    if (%expansion_errors) {
+        my $error_pkgs = "";
+        foreach my $pkg (keys %expansion_errors) {
+            $error_pkgs .= "$pkg:\n  " . join("\n  ", @{$expansion_errors{$pkg}}) . "\n";
+            push @expansion_details, { package_name => $pkg,
+                             package_path => $to_build{$pkg}->{project_base_path},
+                             error_info => join("<br>", @{$expansion_errors{$pkg}}),
+                           };
         }
-        if (%errors) {
-            my $error_pkgs = "";
-            foreach my $pkg (keys %errors) {
-                $error_pkgs .= "$pkg: $errors{$pkg}\n";
-                my $log =  $errors{$pkg};
-                $log =~ s!\Q$localrepo/$dist/$arch/\E!!;
-                push @build_details, { package_name => $pkg,
-                                 package_path => $to_build{$pkg}->{project_base_path},
-                                 succeeded => 0,
-                                 log_path => $log,
-                               };
-            }
-            $msg .= "=== the following packages failed to build due to rpmbuild " .
-                "issue (" . scalar(keys %errors) . ") ===\n$error_pkgs";
-        }
-
-        foreach my $pkg (keys %succeeded) {
-            my $log =  $succeeded{$pkg};
+        $msg .= "=== the following packages failed to build due to missing " .
+            "build dependencies (" . scalar(keys %expansion_errors) . ") ===\n$error_pkgs\n";
+    }
+    if (%errors) {
+        my $error_pkgs = "";
+        foreach my $pkg (keys %errors) {
+            $error_pkgs .= "$pkg: $errors{$pkg}\n";
+            my $log =  $errors{$pkg};
             $log =~ s!\Q$localrepo/$dist/$arch/\E!!;
             push @build_details, { package_name => $pkg,
                              package_path => $to_build{$pkg}->{project_base_path},
-                             succeeded => 1,
+                             succeeded => 0,
                              log_path => $log,
                            };
         }
-
-        # fill json data structure
-        $build_status_json{"build_profile"} = $dist;
-        $build_status_json{"build_arch"} = $arch;
-        $build_status_json{"summary"} = { packages_total => $total_packages,
-                                          packages_succeeded => $succeeded_packages,
-                                          packages_export_error  => $num_export_errors,
-                                          packages_expansion_error => $num_expansion_errors,
-                                          packages_build_error => $num_build_errors
-                                         };
-
-        $build_status_json{"export_details"} = \@export_details;
-        $build_status_json{"expansion_details"} = \@expansion_details;
-        $build_status_json{"build_details"} = \@build_details;
-
-        build_html_report();
-        build_json_report();
-        error($msg);
+        $msg .= "=== the following packages failed to build due to rpmbuild " .
+            "issue (" . scalar(keys %errors) . ") ===\n$error_pkgs";
     }
 
-    info("generated RPM packages can be found from local repo:\n     $rpm_repo_path");
-    info("generated source RPM packages can be found from local repo:\n     $srpm_repo_path");
-    info("build roots located in:\n     $scratch_dir.*");
+    foreach my $pkg (keys %succeeded) {
+        my $log =  $succeeded{$pkg};
+        $log =~ s!\Q$localrepo/$dist/$arch/\E!!;
+        push @build_details, { package_name => $pkg,
+                         package_path => $to_build{$pkg}->{project_base_path},
+                         succeeded => 1,
+                         log_path => $log,
+                       };
+    }
+
+    # fill json data structure
+    $build_status_json{"build_profile"} = $dist;
+    $build_status_json{"build_arch"} = $arch;
+    $build_status_json{"summary"} = { packages_total => $total_packages,
+                                      packages_succeeded => $succeeded_packages,
+                                      packages_export_error  => $num_export_errors,
+                                      packages_expansion_error => $num_expansion_errors,
+                                      packages_build_error => $num_build_errors
+                                     };
+
+    $build_status_json{"export_details"} = \@export_details;
+    $build_status_json{"expansion_details"} = \@expansion_details;
+    $build_status_json{"build_details"} = \@build_details;
+
+    build_html_report();
+    build_json_report();
+
+    if (%errors || %expansion_errors || @export_errors) {
+        error($msg);
+    } else {
+        info("generated RPM packages can be found from local repo:\n     $rpm_repo_path");
+        info("generated source RPM packages can be found from local repo:\n     $srpm_repo_path");
+        info("build roots located in:\n     $scratch_dir.*");
+    }
 }
 
 sub get_binary_list() {
@@ -1692,7 +1693,6 @@ if ($style eq 'git') {
         File::Find::find({wanted => \&obs_wanted}, $package_path );
     }
 }
-error("no spec files to build.\n") if (@packs == 0);
 
 if ($clean_repos && -e "$localrepo/$dist/$arch") {
     info("cleaning up local repo: $rpm_repo_path ...");
@@ -1783,7 +1783,7 @@ if (@bins) {
     update_pkgddeps();
 }
 
-error("no available packages to build.") if (scalar (keys %to_build) == 0);
+warning("no available packages to build.") if (scalar (keys %to_build) == 0);
 
 if ($incremental == 1 && scalar(keys %to_build) > 1) {
     error("incremental build only support building one package");

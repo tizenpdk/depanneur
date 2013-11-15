@@ -554,11 +554,12 @@ sub read_cache {
 sub write_cache {
     my ($cache_key, $cache_val, $base, $spec) = @_;
     my $cache_fname = "$cache_path/$cache_key";
+    my @export_out = gbs_export($base, $spec);
 
-    if (gbs_export($base, $spec) != 0) {
+    if (shift @export_out) {
         push(@export_errors, {package_name => $cache_key,
                               package_path => $base,
-                              error_info   => "N/A"}); # TODO
+                              error_info   => \@export_out});
         return;
     }
 
@@ -1552,6 +1553,10 @@ sub build_report
                     scalar(@export_errors) . ") ===\n";
             foreach my $pkg (@export_errors) {
                 $msg .= $pkg->{"package_name"} . "\n";
+                push @export_details, { package_name => $pkg->{"package_name"},
+                                        package_path => $pkg->{"package_path"},
+                                        error_info => join("<br>", @{$pkg->{"error_info"}}),
+                                      };
             }
             $msg .= "\n";
         }
@@ -1603,7 +1608,7 @@ sub build_report
                                           packages_build_error => $num_build_errors
                                          };
 
-        $build_status_json{"export_details"} = \@export_errors;
+        $build_status_json{"export_details"} = \@export_details;
         $build_status_json{"expansion_details"} = \@expansion_details;
         $build_status_json{"build_details"} = \@build_details;
 

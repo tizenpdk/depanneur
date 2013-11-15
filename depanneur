@@ -1522,12 +1522,12 @@ sub build_html_report
     open(my $report_html, '>', "$localrepo/$dist/$arch/index.html");
     $tmpl->output(print_to => $report_html);
     close($report_html);
+    info("generated html format report:\n     $localrepo/$dist/$arch/index.html" );
 }
 
 
 sub build_json_report
 {
-        info("generate html format report" );
         open(my $report_json, '>', "$localrepo/$dist/$arch/report.json");
         print $report_json to_json(\%build_status_json);
         close($report_json);

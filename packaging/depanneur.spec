@@ -10,7 +10,8 @@ Requires:       createrepo >= 0.9.8
 Requires:       perl(YAML)
 Requires:       perl(JSON)
 Requires:       perl(HTML::Template)
-Requires:       tizen-build >= 2013.03.11-tizen20130319
+Requires:       tizen-build >= 2013.11.12-tizen20131125
+Requires:       tizen-build-initvm >= 2013.11.12-tizen20131125
 %if 0%{?suse_version}
 BuildRequires:  sudo
 %endif

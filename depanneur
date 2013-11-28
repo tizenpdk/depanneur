@@ -1522,7 +1522,6 @@ sub build_html_report
     open(my $report_html, '>', "$localrepo/$dist/$arch/index.html");
     $tmpl->output(print_to => $report_html);
     close($report_html);
-    info("generated html format report:\n     $localrepo/$dist/$arch/index.html" );
 }
 
 
@@ -1535,7 +1534,7 @@ sub build_json_report
 
 sub build_report
 {
-    my $msg = "*** Error Summary ***\n";
+    my $msg = "*** Build Status Summary ***\n";
 
     my $total_packages = scalar(keys %to_build) - scalar (@skipped) + scalar (@export_errors);
     my $succeeded_packages = scalar(keys %succeeded);
@@ -1614,13 +1613,17 @@ sub build_report
     build_html_report();
     build_json_report();
 
+    info($msg);
+
+    info("generated html format report:\n     $localrepo/$dist/$arch/index.html" );
+    info("generated RPM packages can be found from local repo:\n     $rpm_repo_path");
+    info("generated source RPM packages can be found from local repo:\n     $srpm_repo_path");
+    info("build logs can be found in:\n     $localrepo/$dist/$arch/logs");
+    info("build roots located in:\n     $scratch_dir.*");
     if (%errors || %expansion_errors || @export_errors) {
-        error($msg);
-    } else {
-        info("generated RPM packages can be found from local repo:\n     $rpm_repo_path");
-        info("generated source RPM packages can be found from local repo:\n     $srpm_repo_path");
-        info("build roots located in:\n     $scratch_dir.*");
+        exit 1;
     }
+
 }
 
 sub get_binary_list() {

@@ -11,7 +11,11 @@ Requires:       perl(YAML)
 Requires:       perl(JSON)
 Requires:       perl(HTML::Template)
 Requires:       tizen-build >= 2013.11.12-tizen20131125
-Requires:       tizen-build-initvm >= 2013.11.12-tizen20131125
+Requires:       build-initvm-i586
+%ifarch         x86_64
+Requires:       build-initvm-x86_64
+%endif
+
 %if 0%{?suse_version}
 BuildRequires:  sudo
 %endif

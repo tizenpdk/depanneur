@@ -1,3 +1,10 @@
+depanneur (0.10.1) unstable; urgency=high
+
+  * depend on latest build-20131112
+  * generate html report automatically
+
+ -- Qiang Zhang <qiang.z.zhang@intel.com>  Fri, 29 Nov 2013 10:56:15 +0800
+
 depanneur (0.10) unstable; urgency=high
 
   * Remove hard code of _rpmdir in build root, use chroot to detect instead

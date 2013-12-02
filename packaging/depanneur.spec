@@ -19,7 +19,6 @@ Requires:       build-initvm-x86_64
 %if 0%{?suse_version}
 BuildRequires:  sudo
 %endif
-BuildArch:      noarch
 Autoreq:        0
 %description
 The depanneur tool goes through local Git trees and evaluates packaging

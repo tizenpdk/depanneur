@@ -434,6 +434,7 @@ my $package_path = "";
 my %archpolicies = (
           "x86_64"      =>  ["x86_64", "i686", "i586", "i486", "i386", "noarch"],
           "i586"        =>  ["i686", "i586", "i486", "i386", "noarch"],
+          "aarch64"     =>  ["aarch64", "noarch"],
           "armv7hl"     =>  ["armv7hl", "noarch"],
           "armv7l"      =>  ["armv7l", "armv7el", "armv6l", "armv5tejl", "armv5tel", "armv5l", "armv4tl", "armv4l", "armv3l", "noarch"],
           "armv6l"      =>  ["armv6l", "armv5tejl", "armv5tel", "armv5l", "armv4tl", "armv4l", "armv3l", "noarch"],

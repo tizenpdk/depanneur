@@ -1595,6 +1595,7 @@ sub build_report
                          log_path => $log,
                        };
     }
+    $msg .= "=== Total succeeded built packages: ($succeeded_packages) ===";
 
     # fill json data structure
     $build_status_json{"build_profile"} = $dist;

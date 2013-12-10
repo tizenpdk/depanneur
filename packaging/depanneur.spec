@@ -10,7 +10,7 @@ Requires:       createrepo >= 0.9.8
 Requires:       perl(YAML)
 Requires:       perl(JSON)
 Requires:       perl(HTML::Template)
-Requires:       tizen-build >= 2013.11.12-tizen20131125
+Requires:       tizen-build >= 20131210
 Requires:       tizen-build-initvm-i586 >= 20131210
 %ifarch         x86_64
 Requires:       tizen-build-initvm-x86_64 >= 20131210

@@ -1,9 +1,15 @@
-depanneur (0.10.1) unstable; urgency=high
+depanneur (0.11) unstable; urgency=high
 
   * depend on latest build-20131112
   * generate html report automatically
+  * refine build report summary:
+    - add build log dir
+    - always print the dirs of final build files
+    - add succeeded packages number
+  * depend on initvm to register qemu handler
+  * add arm 64(aarch64) support
 
- -- Qiang Zhang <qiang.z.zhang@intel.com>  Fri, 29 Nov 2013 10:56:15 +0800
+ -- Qiang Zhang <qiang.z.zhang@intel.com>  Tue, 10 Dec 2013 10:56:15 +0800
 
 depanneur (0.10) unstable; urgency=high
 

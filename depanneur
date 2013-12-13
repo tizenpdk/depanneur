@@ -1216,13 +1216,6 @@ sub worker_thread {
         push(@done, $name);
         if ($status == 0) {
             $dirty = 1;
-            $succeeded{"$name"} = "$localrepo/$dist/$arch/logs/success/$name-$version-$release/log";
-        } else {
-            if (-f "$localrepo/$dist/$arch/logs/fail/$name-$version-$release/log") {
-                $errors{"$name"} = "$localrepo/$dist/$arch/logs/fail/$name-$version-$release/log"
-            } else {
-                $errors{"$name"} = "";
-            }
         }
     }
 
@@ -1437,7 +1430,8 @@ sub build_package {
         chomp($srcrpmdirpath);
         mkdir_p "$success_logs_path/$name-$version-$release";
         if (-e "$scratch/.build.log") {
-            my_system ("cp $scratch/.build.log $success_logs_path/$name-$version-$release/log");
+            my_system ("cp $scratch/.build.log $success_logs_path/$name-$version-$release/log.txt");
+            $succeeded{"$name"} = "$success_logs_path/$name-$version-$release/log.txt";
             my_system ("sudo /bin/rm -f $scratch/.build.log ");
         }
         # Detach and terminate
@@ -1463,9 +1457,12 @@ sub build_package {
     } else {
         mkdir_p "$fail_logs_path/$name-$version-$release";
         if ( -f "$scratch/.build.log" ) {
-            my_system ("cp $scratch/.build.log $fail_logs_path/$name-$version-$release/log");
+            my_system ("cp $scratch/.build.log $fail_logs_path/$name-$version-$release/log.txt");
             my_system ("sudo /bin/rm -f $scratch/.build.log");
-            warning("build failed, Leaving the logs in $fail_logs_path/$name-$version-$release/log");
+            $errors{"$name"} = "$fail_logs_path/$name-$version-$release/log.txt";
+            warning("build failed, Leaving the logs in $fail_logs_path/$name-$version-$release/log.txt");
+        } else {
+            $errors{"$name"} = "";
         }
         return 1;
     }

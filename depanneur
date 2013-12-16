@@ -274,21 +274,28 @@ sub my_system {
     my $cmd = shift;
     debug("my_system: $cmd");
     my $ret;
+    my $pid;
     my @out = ();
+    if (wantarray) {
+        defined($pid=open(PIPE, "-|")) or die "Can not fork: $!\n";
+    } else {
+        defined($pid=fork) or die "Can not fork: $!\n";
+    }
 
-    defined(my $pid=open(PIPE, "-|")) or die "Can not fork: $!\n";
     unless ($pid) {  # Child
         open(STDERR, ">&STDOUT");
         exec ($cmd);
         exit -1;
     } else {  # Parent
-        while (my $line = <PIPE>) {
-            print $line;
-            push @out, $line if wantarray;
+        if (wantarray) {
+            while (my $line = <PIPE>) {
+                print $line;
+                push @out, $line;
+            }
         }
         waitpid ($pid,0);
         $ret = $?;
-        close(PIPE);
+        close(PIPE) if wantarray;
 
         return wantarray ? ($ret, @out): $ret;
     }

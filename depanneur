@@ -1618,6 +1618,10 @@ sub build_report
     $build_status_json{"export_details"} = \@export_details;
     $build_status_json{"expansion_details"} = \@expansion_details;
     $build_status_json{"build_details"} = \@build_details;
+    $build_status_json{"html_report"} = "$localrepo/$dist/$arch/index.html";
+    $build_status_json{"rpm_repo"} = "$rpm_repo_path";
+    $build_status_json{"srpm_repo"} = "$srpm_repo_path";
+    $build_status_json{"build_logs"} = "$localrepo/$dist/$arch/logs";
 
     build_html_report();
     build_json_report();

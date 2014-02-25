@@ -1633,7 +1633,7 @@ sub build_report
     info("generated source RPM packages can be found from local repo:\n     $srpm_repo_path");
     info("build logs can be found in:\n     $localrepo/$dist/$arch/logs");
     info("build roots located in:\n     $scratch_dir.*");
-    if (%errors || %expansion_errors || @export_errors) {
+    if (%errors || %expansion_errors || @export_errors || $succeeded_packages == 0) {
         exit 1;
     }
 

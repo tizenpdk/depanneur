@@ -499,12 +499,27 @@ sub fill_packs_from_git {
         my (undef, $tmp_file) = tempfile(CLEANUP=>1, OPEN => 0);
         if (my_system("cd $base; git show $commit:$packaging_dir >$tmp_file 2>/dev/null") == 0) {
             open my $file, '<', $tmp_file or die $!;
-            while (<$file>) {
-                chomp;
-                next if $_ !~ /\.spec$/;
-                next if $arg_spec ne "" && $_ ne $arg_spec;
-                push(@pre_packs, {filename => "$base/$packaging_dir/$_",
-                              project_base_path => $base});
+            my $first_line = <$file>;
+            if ($first_line =~ /^tree/) {
+                while (<$file>) {
+                    chomp;
+                    next if $_ !~ /\.spec$/;
+                    next if $arg_spec ne "" && $_ ne $arg_spec;
+                    push(@pre_packs, {filename => "$base/$packaging_dir/$_",
+                                      project_base_path => $base});
+                }
+            } else { #packaging_dir is a symbol link
+                my (undef, $tmp_symlink_file) = tempfile(CLEANUP=>1, OPEN => 0);
+                if (my_system("cd $base; git show $commit:$first_line >$tmp_symlink_file 2>/dev/null") == 0) {
+                    open my $symlink_file, '<', $tmp_symlink_file or die $!;
+                    while (<$symlink_file>) {
+                        chomp;
+                        next if $_ !~ /\.spec$/;
+                        next if $arg_spec ne "" && $_ ne $arg_spec;
+                        push(@pre_packs, {filename => "$base/$first_line/$_",
+                                          project_base_path => $base});
+                    }
+                }
             }
         }
     } else {
@@ -513,7 +528,7 @@ sub fill_packs_from_git {
         my @spec_list = glob($pattern);
         foreach my $spec (@spec_list) {
                 push(@pre_packs, {filename => "$spec",
-                              project_base_path => $base});
+                                  project_base_path => $base});
         }
     }
 }

@@ -136,7 +136,7 @@ my %visit    = ();
 my @running :shared = ();
 my @done :shared = ();
 my @skipped = ();
-my @original_specs = ();
+my @pre_packs = ();
 
 my @cleaned : shared = ();
 my %errors :shared;
@@ -502,12 +502,19 @@ sub fill_packs_from_git {
             while (<$file>) {
                 chomp;
                 next if $_ !~ /\.spec$/;
-                push(@original_specs, "$base/$packaging_dir/$_");
+                next if $arg_spec ne "" && $_ ne $arg_spec;
+                push(@pre_packs, {filename => "$base/$packaging_dir/$_",
+                              project_base_path => $base});
             }
         }
     } else {
         my $pattern = "$base/$packaging_dir/*.spec";
-        push(@original_specs, glob($pattern));
+        $pattern = "$base/$packaging_dir/$arg_spec" if $arg_spec ne "";
+        my @spec_list = glob($pattern);
+        foreach my $spec (@spec_list) {
+                push(@pre_packs, {filename => "$spec",
+                              project_base_path => $base});
+        }
     }
 }
 
@@ -606,16 +613,16 @@ sub query_git_commit_rev {
 
 sub prepare_git {
     my $config = shift;
+    my $base = shift;
     my $spec = shift;
     my $spec_file = basename($spec);
-    my $base = dirname($spec);
-    $base =~ s!\Q$packaging_dir\E!!;
 
     if ($includeall == 0) {
         my $tmp_dir = abs_path(tempdir(CLEANUP=>1));
         my $tmp_spec = "$tmp_dir/$spec_file";
-        my $without_base = $spec;
-        $without_base ="$packaging_dir/$spec_file";
+        my $without_base;
+        $spec =~ s!\Q$base/\E!!;
+        $without_base = $spec;
         if (my_system("cd $base; git show $commit:$without_base >$tmp_spec 2>/dev/null") != 0) {
             warning("failed to checkout spec file from commit: $commit:$without_base");
             return;
@@ -1669,40 +1676,20 @@ info("start building packages from: " . $package_path . " ($style)");
 ($_, $start_time) = my_system("date +\"%Y-%m-%d %H:%M %z\"");
 
 if ($style eq 'git') {
-    my @specs = @ARGV;
-    if ($arg_spec ne "") {
-        push @specs, "$path/$packaging_dir/$arg_spec";
+    File::Find::find({wanted => \&git_wanted}, $package_path );
+    if (@pre_packs > 1 && $commit ne "HEAD"){
+        error("--commit option can't be specified with multiple packages");
     }
-
-    if (@specs == 0) {
-        File::Find::find({wanted => \&git_wanted}, $package_path );
-        if (@original_specs > 1 && $commit ne "HEAD"){
-            error("--commit option can't be specified with multiple packages");
-        }
-        if (@original_specs == 0) {
-            error("No source package found at $package_path");
-        }
-        push @specs, @original_specs;
+    if (@pre_packs == 0) {
+        error("No source package found at $package_path");
     }
-    if ($incremental == 1) {
-        # No need to prepare git for incremental build
-        foreach my $sp (@specs) {
-            my $packaging = dirname($sp);
-            my $base = dirname($packaging);
-            if (! -e $sp){
-                error("$sp does not exist under package:$base");
-            }
-            push(@packs, {
-                    filename => "$sp",
-                    project_base_path => $base,
-                    });
+    if ($incremental == 0) {
+        info("prepare sources...");
+        foreach my $pack (@pre_packs) {
+            prepare_git($config, $pack->{"project_base_path"}, $pack->{"filename"});
         }
     } else {
-        info("prepare sources...");
-        foreach my $sp (@specs) {
-            prepare_git($config, $sp);
-        }
-
+        @packs = @pre_packs;
     }
 } else {
     @packs = @ARGV;

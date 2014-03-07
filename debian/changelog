@@ -1,3 +1,11 @@
+depanneur (0.12) unstable; urgency=high
+
+  * Fix export failed if packaging dir is symblic
+  * depend on new version build to fix binfmt handlers register issue
+  * Return error if arch is not compatible for build
+
+ -- Qiang Zhang <qiang.z.zhang@intel.com>  Fri, 7 Mar 2014 10:56:15 +0800
+
 depanneur (0.11) unstable; urgency=high
 
   * depend on latest build-20131112

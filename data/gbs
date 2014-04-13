@@ -1,7 +1,7 @@
-ALL     ALL=(ALL) NOPASSWD: /bin/mount -o bind * */home/abuild/rpmbuild/BUILD/*
-ALL     ALL=(ALL) NOPASSWD: /bin/umount -l */home/abuild/rpmbuild/BUILD/*
-ALL     ALL=(ALL) NOPASSWD: /bin/umount -l -f */home/abuild/rpmbuild/BUILD/*
-ALL     ALL=(ALL) NOPASSWD: /bin/mkdir -p */home/abuild/rpmbuild/BUILD/*
+ALL     ALL=(ALL) NOPASSWD: /bin/mount -o bind * */scratch.*
+ALL     ALL=(ALL) NOPASSWD: /bin/umount -l */scratch.*
+ALL     ALL=(ALL) NOPASSWD: /bin/umount -l -f */scratch.*
+ALL     ALL=(ALL) NOPASSWD: /bin/mkdir -p */scratch.*
 ALL     ALL=(ALL) NOPASSWD: /usr/bin/build
 ALL     ALL=(ALL) NOPASSWD: /bin/cp *.conf */scratch.*/*.conf
 ALL     ALL=(ALL) NOPASSWD: /bin/rm -f */.build.log

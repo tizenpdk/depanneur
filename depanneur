@@ -946,10 +946,6 @@ sub createrepo
     $extra_opts = $extra_opts . " --update " if ( -e "$localrepo/$dist/$arch/repodata" );
     $extra_opts = $extra_opts . " --groupfile=$groupfile " if ( -e "$groupfile");
     my_system ("createrepo $extra_opts $localrepo/$dist/$arch > /dev/null 2>&1 ") == 0 or die "createrepo failed: $?\n";
-    if ( -e $patternfile ) {
-        my_system("rm $localrepo/$dist/$arch/repodata/*patterns.xml.gz -f");
-        my_system("modifyrepo $patternfile $localrepo/$dist/$arch/repodata >/dev/null");
-    }
 
 }
 
@@ -1511,6 +1507,17 @@ sub update_repo
     if ($packages_built) {
         info("updating local repo");
         createrepo ($arch, $dist);
+    }
+
+    my @package_group_rpm = glob("$rpm_repo_path/package-groups-[0-9]*.rpm");
+    my $tmp_dir = abs_path(tempdir(CLEANUP=>1));
+    if ( @package_group_rpm != 0 and -e $package_group_rpm[0] ) {
+        my_system("cd $tmp_dir; rpm2cpio $package_group_rpm[0] | cpio -di ");
+        ( $patternfile ) = glob("$tmp_dir/*/*/*/patterns.xml");
+    }
+    if ( -e $patternfile ) {
+        my_system("rm $localrepo/$dist/$arch/repodata/*patterns.xml.gz -f");
+        my_system("modifyrepo $patternfile $localrepo/$dist/$arch/repodata >/dev/null");
     }
 
 }

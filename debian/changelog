@@ -1,3 +1,12 @@
+depanneur (0.13) unstable; urgency=high
+
+  * Add a new --spec-commit option to support new orphan-packaging
+    development model
+  * Add group metadata to local repodata if package-groups.rpm exists
+
+ -- Qiang Zhang <qiang.z.zhang@intel.com>  Wed, 21 May 2014 10:56:15 +0800
+
+
 depanneur (0.12) unstable; urgency=high
 
   * Fix export failed if packaging dir is symblic

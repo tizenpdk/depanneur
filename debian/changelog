@@ -1,3 +1,13 @@
+depanneur (0.13.1) unstable; urgency=high
+
+  * ignore already finished packages for dependency resolving
+  * ignore already skipped packages for dependency resolving
+  * add gbs version infor in final build report
+  * depend on new obs-build to fix qemu arch64 issue
+
+ -- Qiang Zhang <qiang.z.zhang@intel.com>  Thu, 12 Jun 2014 10:56:15 +0800
+
+
 depanneur (0.13) unstable; urgency=high
 
   * Add a new --spec-commit option to support new orphan-packaging

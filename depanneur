@@ -1115,7 +1115,8 @@ sub update_pkgdeps
 
 sub update_pkgddeps {
     foreach my $name (keys %to_build) {
-        if(! (grep $_ eq $name, @skipped)) {
+        if(! (grep $_ eq $name, @skipped) &&
+           ! (grep $_ eq $name, @done)) {
             my $fn = $to_build{$name}->{filename};
             my @bdeps = get_deps($fn);
             my @deps;
@@ -1123,6 +1124,7 @@ sub update_pkgddeps {
                 my $so = source_of($depp, %to_build);
                 if (defined($so) && $name ne $so
                     && (! grep($_ eq $so, @skipped))
+                    && (! grep($_ eq $so, @done))
                     && (! grep($_ eq $so, @deps))) {
                     push (@deps, $so);
                 }

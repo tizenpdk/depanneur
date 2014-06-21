@@ -1772,6 +1772,28 @@ my %packs = parse_packs($config, @packs);
 info("building repo metadata ...");
 refresh_repo();
 
+
+info("resolving skipped packages ...");
+# only check skipping & overwriting for none noinit/incremental build
+if ($noinit == 0 && $incremental == 0) {
+    foreach my $name (keys %to_build) {
+        my $fn = $to_build{$name}->{filename};
+        my $version = $to_build{$name}->{version};
+        my $release = $to_build{$name}->{release};
+
+        my $src_rpm = "$srpm_repo_path/$name-$version-$release.src.rpm";
+        if (-f $src_rpm) {
+            if ($overwrite) {
+                info("*** overwriting $name-$version-$release $arch ***");
+            } else {
+                info("skipping $name-$version-$release $arch ");
+                push(@skipped, $name);
+            }
+        }
+    }
+}
+
+
 info("package dependency resolving ...");
 update_pkgdeps();
 update_pkgddeps();
@@ -1832,28 +1854,6 @@ for(my $w = 0; $w < $MAX_THREADS; $w++) {
 if ( ! -e "$rpm_repo_path" ) {
     info("creating repo...");
     createrepo ($arch, $dist);
-}
-
-# only check skipping & overwriting for none noinit/incremental build
-if ($noinit == 0 && $incremental == 0) {
-    foreach my $name (keys %to_build) {
-        my $fn = $to_build{$name}->{filename};
-        my $version = $to_build{$name}->{version};
-        my $release = $to_build{$name}->{release};
-
-        my $src_rpm = "$srpm_repo_path/$name-$version-$release.src.rpm";
-        if (-f $src_rpm) {
-            if ($overwrite) {
-                info("*** overwriting $name-$version-$release $arch ***");
-            } else {
-                info("skipping $name-$version-$release $arch ");
-                push(@skipped, $name);
-            }
-        }
-    }
-    # refresh pkgdeps to remove skipped packages
-    update_pkgdeps();
-    update_pkgddeps();
 }
 
 

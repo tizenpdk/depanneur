@@ -122,6 +122,7 @@ my $keep_packs = 0;
 my @defines;
 my $arg_spec = "";
 my $start_time = "";
+my $gbs_version = "";
 
 my @tofind = ();
 my %to_build = ();
@@ -1539,6 +1540,7 @@ sub build_html_report
         build_profile => $build_status_json{"build_profile"},
         build_arch => $build_status_json{"build_arch"},
         build_start_time => $build_status_json{"build_start_time"},
+        gbs_version => $build_status_json{"gbs_version"},
         );
 
     $tmpl->param($build_status_json{"summary"});
@@ -1641,6 +1643,7 @@ sub build_report
     $build_status_json{"build_profile"} = $dist;
     $build_status_json{"build_arch"} = $arch;
     $build_status_json{"build_start_time"} = $start_time;
+    $build_status_json{"gbs_version"} = $gbs_version;
     $build_status_json{"summary"} = { packages_total => $total_packages,
                                       packages_succeeded => $succeeded_packages,
                                       packages_export_error  => $num_export_errors,
@@ -1700,6 +1703,8 @@ sub get_binary_list() {
 # MAIN
 info("start building packages from: " . $package_path . " ($style)");
 ($_, $start_time) = my_system("date +\"%Y-%m-%d %H:%M %z\"");
+($_, $gbs_version) = my_system("gbs -V");
+$gbs_version =~ s!gbs !!;
 
 $spec_commit = $commit if ($spec_commit eq "");
 if ($style eq 'git') {

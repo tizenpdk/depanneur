@@ -1225,6 +1225,25 @@ sub resolve_deps {
     return @final;
 }
 
+sub resolve_skipped_packages() {
+    info("resolving skipped packages ...");
+    foreach my $name (keys %to_build) {
+        my $fn = $to_build{$name}->{filename};
+        my $version = $to_build{$name}->{version};
+        my $release = $to_build{$name}->{release};
+
+        my $src_rpm = "$srpm_repo_path/$name-$version-$release.src.rpm";
+        if (-f $src_rpm) {
+            if ($overwrite) {
+                info("*** overwriting $name-$version-$release $arch ***");
+            } else {
+                info("skipping $name-$version-$release $arch ");
+                push(@skipped, $name);
+            }
+        }
+    }
+}
+
 
 sub worker_thread {
     my ($name, $thread, $index) = @_;
@@ -1777,27 +1796,10 @@ my %packs = parse_packs($config, @packs);
 info("building repo metadata ...");
 refresh_repo();
 
-
-info("resolving skipped packages ...");
 # only check skipping & overwriting for none noinit/incremental build
 if ($noinit == 0 && $incremental == 0) {
-    foreach my $name (keys %to_build) {
-        my $fn = $to_build{$name}->{filename};
-        my $version = $to_build{$name}->{version};
-        my $release = $to_build{$name}->{release};
-
-        my $src_rpm = "$srpm_repo_path/$name-$version-$release.src.rpm";
-        if (-f $src_rpm) {
-            if ($overwrite) {
-                info("*** overwriting $name-$version-$release $arch ***");
-            } else {
-                info("skipping $name-$version-$release $arch ");
-                push(@skipped, $name);
-            }
-        }
-    }
+    resolve_skipped_packages();
 }
-
 
 info("package dependency resolving ...");
 update_pkgdeps();
@@ -1835,8 +1837,12 @@ if (@bins) {
     }
 
     push @final, resolve_deps(\@tobuild, $deps_build, $rdeps_build, %packs);
-
     %to_build = parse_packs($config, @final);
+
+    @skipped = ();
+    if ($noinit == 0 && $incremental == 0) {
+        resolve_skipped_packages();
+    }
     update_pkgdeps();
     update_pkgddeps();
 }

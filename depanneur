@@ -553,8 +553,7 @@ sub fill_packs_from_git {
 
     debug("working on $base");
     if ($includeall == 0) {
-        # create temp file and desctroy it autoly
-        my (undef, $tmp_file) = tempfile(CLEANUP=>1, OPEN => 0);
+        my (undef, $tmp_file) = tempfile(OPEN => 0);
         if (my_system("cd $base; git show $spec_commit:$packaging_dir >$tmp_file 2>/dev/null") == 0) {
             open my $file, '<', $tmp_file or die $!;
             # the content like:
@@ -575,7 +574,7 @@ sub fill_packs_from_git {
                                       project_base_path => $base});
                 }
             } else {        #packaging_dir is a symbol link
-                my (undef, $tmp_symlink_file) = tempfile(CLEANUP=>1, OPEN => 0);
+                my (undef, $tmp_symlink_file) = tempfile(OPEN => 0);
                 # git show the real packaging dir
                 if (my_system("cd $base; git show $spec_commit:$first_line >$tmp_symlink_file 2>/dev/null") == 0) {
                     open my $symlink_file, '<', $tmp_symlink_file or die $!;
@@ -586,8 +585,12 @@ sub fill_packs_from_git {
                         push(@pre_packs, {filename => "$base/$first_line/$_",
                                           project_base_path => $base});
                     }
+                    close($symlink_file);
+                    unlink $tmp_symlink_file;
                 }
             }
+            close($file);
+            unlink $tmp_file;
         }
     } else {
         # specify --include-all use current packaging dir not from git

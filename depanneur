@@ -496,6 +496,8 @@ my %archpolicies = (
           "armv7hl"     =>  ["armv7hl", "noarch"],
           "armv7l"      =>  ["armv7l", "armv7el", "armv6l", "armv5tejl", "armv5tel", "armv5l", "armv4tl", "armv4l", "armv3l", "noarch"],
           "armv6l"      =>  ["armv6l", "armv5tejl", "armv5tel", "armv5l", "armv4tl", "armv4l", "armv3l", "noarch"],
+          "mips"        =>  ["mips", "noarch"],
+          "mipsel"      =>  ["mipsel", "noarch"],
         );
 
 error("$arch not support") if (not exists $archpolicies{$arch});

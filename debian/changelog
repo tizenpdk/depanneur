@@ -1,3 +1,9 @@
+depanneur (0.13.2) unstable; urgency=high
+
+  * depend on new build
+
+ -- Qiang Zhang <qiang.z.zhang@intel.com> Fir, 15 Aug 2014 10:56:15 +0800
+
 depanneur (0.13.1) unstable; urgency=high
 
   * ignore already finished packages for dependency resolving

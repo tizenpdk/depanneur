@@ -552,12 +552,13 @@ sub fill_packs_from_git {
     }
 
     debug("working on $base");
-    if ($includeall == 0) {
+    if ($includeall == 0 || $spec_commit ne "") {
         my (undef, $tmp_file) = tempfile(OPEN => 0);
-        if (my_system("cd $base; git show $spec_commit:$packaging_dir >$tmp_file 2>/dev/null") == 0) {
+        my $__commit = $spec_commit eq "" ? $commit : $spec_commit;
+        if (my_system("cd $base; git show $__commit:$packaging_dir >$tmp_file 2>/dev/null") == 0) {
             open my $file, '<', $tmp_file or die $!;
             # the content like:
-            # tree $spec_commit:$packaging_dir
+            # tree $__commit:$packaging_dir
             #
             # xxxxx.spec
             # if packaging dir is a symbol link
@@ -576,7 +577,7 @@ sub fill_packs_from_git {
             } else {        #packaging_dir is a symbol link
                 my (undef, $tmp_symlink_file) = tempfile(OPEN => 0);
                 # git show the real packaging dir
-                if (my_system("cd $base; git show $spec_commit:$first_line >$tmp_symlink_file 2>/dev/null") == 0) {
+                if (my_system("cd $base; git show $__commit:$first_line >$tmp_symlink_file 2>/dev/null") == 0) {
                     open my $symlink_file, '<', $tmp_symlink_file or die $!;
                     while (<$symlink_file>) {
                         chomp;
@@ -733,7 +734,7 @@ sub prepare_git {
     my $spec = shift;
     my $spec_file = basename($spec);
 
-    if ($includeall == 0) {
+    if ($includeall == 0 || $spec_commit ne "") {
         # create temp directory and clean it autoly
         my $tmp_dir = abs_path(tempdir(CLEANUP=>1));
         my $tmp_spec = "$tmp_dir/$spec_file";
@@ -1982,7 +1983,6 @@ info("start building packages from: " . $package_path . " ($style)");
 ($_, $gbs_version) = my_system("gbs -V");
 $gbs_version =~ s!gbs !!;
 
-$spec_commit = $commit if ($spec_commit eq "");
 if ($style eq 'git') {
     File::Find::find({wanted => \&git_wanted}, $package_path );
     if (@pre_packs > 1 && $commit ne "HEAD"){

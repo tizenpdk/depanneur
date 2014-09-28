@@ -98,6 +98,7 @@ my $help = 0;                   # show help information
 my $keepgoing = 0;              # TODO: clean up
 my $clean_repos = 0;            # clean corresponding local rpm repos
 my $create_baselibs = 0;        # create baselibs packages if baselibs.conf exists
+my $no_source_rpm = 0;          # don't generate source rpm package if $no_source_rpm == 1
 
 my $virtualenv = "$ENV{'VIRTUAL_ENV'}";    # virtual env dir, default is '/'
 my $build_root = $ENV{TIZEN_BUILD_ROOT};   # depanneur output dir
@@ -202,6 +203,7 @@ GetOptions (
     "spec=s" => \$arg_spec,
     "clean-repos" => \$clean_repos,
     "baselibs" => \$create_baselibs,
+    "no-source-rpm" => \$no_source_rpm,
     );
 
 if ( $help ) {
@@ -483,7 +485,9 @@ mkdir_p($success_logs_path);
 mkdir_p($fail_logs_path);
 mkdir_p($cache_path);
 mkdir_p($rpm_repo_path);
-mkdir_p($srpm_repo_path);
+if ($no_source_rpm == 0){
+    mkdir_p($srpm_repo_path);
+}
 
 my @packs;
 my $package_path = "";
@@ -1102,7 +1106,9 @@ sub createrepo
     my $dist = shift;
     my $extra_opts = "--changelog-limit=0 -q";
 
-    my_system("touch $srpm_repo_path");
+    if ($no_source_rpm == 0){
+        my_system("touch $srpm_repo_path");
+    }
     my_system("touch $rpm_repo_path");
 
     # if local repo has been created, run createrepo with --update
@@ -1701,6 +1707,7 @@ sub build_package {
         my_system("tar -zcf $source_tar $tmp_dir") if ($source_tar ne "");
     }
 
+    push @args, "--stage=\"-bb\"" if ($no_source_rpm == 1);
     $cmd = join(" ", @args);
     debug($cmd);
     my $ret = my_system ($cmd);
@@ -1734,7 +1741,9 @@ sub build_package {
                 #remove old srpms in local repo
                 #copy the new ones to local repo
                 update_repo_with_rpms(\%srpmpaths, @srpms);
-                my_system ("cp $scratch/$srcrpmdirpath/*.rpm $srpm_repo_path");
+                if ($no_source_rpm == 0){
+                   my_system ("cp $scratch/$srcrpmdirpath/*.rpm $srpm_repo_path");
+                }
             }
             if (my @rpms = bsd_glob "$scratch/$rpmdirpath/*/*.rpm") {
                 #remove old rpms in local repo
@@ -1938,7 +1947,9 @@ sub build_report
     $build_status_json{"build_details"} = \@build_details;
     $build_status_json{"html_report"} = "$localrepo/$dist/$arch/index.html";
     $build_status_json{"rpm_repo"} = "$rpm_repo_path";
-    $build_status_json{"srpm_repo"} = "$srpm_repo_path";
+    if ($no_source_rpm == 0) {
+        $build_status_json{"srpm_repo"} = "$srpm_repo_path";
+    }
     $build_status_json{"build_logs"} = "$localrepo/$dist/$arch/logs";
 
     build_html_report();
@@ -1948,7 +1959,9 @@ sub build_report
 
     info("generated html format report:\n     $localrepo/$dist/$arch/index.html" );
     info("generated RPM packages can be found from local repo:\n     $rpm_repo_path");
-    info("generated source RPM packages can be found from local repo:\n     $srpm_repo_path");
+    if ($no_source_rpm == 0){
+        info("generated source RPM packages can be found from local repo:\n     $srpm_repo_path");
+    }
     info("build logs can be found in:\n     $localrepo/$dist/$arch/logs");
     info("build roots located in:\n     $scratch_dir.*");
     if (%errors || %expansion_errors || @export_errors || ($succeeded_packages == 0 && @skipped == 0)) {

@@ -1,0 +1,143 @@
+* Wed Oct 08 2014 Li Jinjing <jinjingx.li@intel.com> 0.13.3
+- add comments for core builder code
+- fix build with --include-all on development branch(orphan-packaging mode)
+- fix leaking of temporary files
+- support --fallback-to-native option of gbs
+
+* Fri Aug 15 2014 Qiang Zhang <qiang.z.zhang@intel.com> 0.13.2
+- depend on new build
+
+* Thu Jun 12 2014 Qiang Zhang <qiang.z.zhang@intel.com> 0.13.1
+- ignore already finished packages for dependency resolving
+- ignore already skipped packages for dependency resolving
+- add gbs version infor in final build report
+- depend on new obs-build to fix qemu arch64 issue
+
+* Wed May 21 2014 Qiang Zhang <qiang.z.zhang@intel.com> 0.13
+- Add a new --spec-commit option to support new orphan-packaging
+  development model
+- Add group metadata to local repodata if package-groups.rpm exists
+
+* Fri Mar 07 2014 Qiang Zhang <qiang.z.zhang@intel.com> 0.12
+- Fix export failed if packaging dir is symblic
+- depend on new version build to fix binfmt handlers register issue
+- Return error if arch is not compatible for build
+
+* Tue Dec 10 2013 Qiang Zhang <qiang.z.zhang@intel.com> 0.11
+- depend on latest build-20131112
+- generate html report automatically
+- refine build report summary:
+  - add build log dir
+  - always print the dirs of final build files
+  - add succeeded packages number
+- depend on initvm to register qemu handler
+- add arm 64(aarch64) support
+
+* Wed Oct 16 2013 Qiang Zhang <qiang.z.zhang@intel.com> 0.10
+- Remove hard code of _rpmdir in build root, use chroot to detect instead
+- Support comments (#) in binary-list file for --binary-from-file option
+- Remove previous built rpm and srpm if new version has been built out
+
+* Tue Aug 20 2013 Qiang Zhang <qiang.z.zhang@intel.com> 0.9
+- Define the de-facto %opensuse_bs macro from OBS to be zero
+
+* Mon Jul 01 2013 Qiang Zhang <qiang.z.zhang@intel.com> 0.8
+- create debug package by default
+- refinement:
+  - report circle in time
+  - load dependency data during refresh repo, instead of during parsing every
+    spec file
+- bug fix:
+  - get target arch from build conf if 'Target' is set in build config, which
+    make gbs and remote obs generate the same arch for final RPM package
+  - exit unexpectedly if circle exist
+  - using higer version in different repo
+
+* Tue May 14 2013 Qiang Zhang <qiang.z.zhang@intel.com> 0.7
+- avoid export multiple times for packages contails multiple spec files
+- put all build roots in a individual directory, which can be mounted as tmpfs
+  to speed up building
+- Add statistical of each errors, including export/expansion/rpmbuild errors
+- refine createrepo: add --update for if repodata already exists
+- bug fix:
+  - prereqs involved for dependency resolving
+  - fix wrong @deps which contain version info
+  - quote metacharacters in pattern to fix strip issue if metacharacters exist
+
+* Mon Mar 25 2013 Qiang Zhang <qiang.z.zhang@intel.com> 0.6
+- fix createrepo option usage issue
+- depend on new version of obs-build-2013.03.11
+- depend on createrepo 0.9.9 for deltarpm support
+
+* Thu Feb 21 2013 Qiang Zhang <qiang.z.zhang@intel.com> 0.5
+- Add --binary-from-file option to specify a package list file
+- Change --binary-list option, accept a packages list separated by comma(,).
+- Add --deps to build specified packages and all packages they depend
+- Add --rdeps to build specified packages and all packages depend on them
+
+* Wed Jan 23 2013 Qiang Zhang <qiang.z.zhang@intel.com> 0.4
+- Refine build behavior: gbs build should not depend on local copy
+- Use --target option for build script to build specified arch
+- add depanneur_sudo and sudoers configure to avoid requesting passwd
+- use the processors number instead of hard code 4 for parallel compile
+- show package info for arch incompatible warning
+- Add --no-patch-export option for source export
+- supported arches clean up
+- bug fix:
+  - crash if specify a non-exist specfile with --spec option
+
+* Mon Nov 26 2012 Qiang Zhang <qiang.z.zhang@intel.com> 0.3
+- --noinit support
+- Support build RPM packages for incremental build
+- warning user and try again if umount failed for incremental build
+- no need create/unpack tar ball for incremental build
+- x86_64 support
+- keep src rpm for each arch
+- show build progress for multiple packages build
+- Add --spec to support multi-spec project
+- Add --define option to define macros for rpmbuild
+- Modify SUDOV_PERIOD smaller (5 mins)
+- Add more output info about building status
+- Add --keep-packs to keep unused packages in buildroot
+
+* Mon Nov 12 2012 Qiang Zhang <qiang.z.zhang@intel.com> 0.2.1
+- Update dependency: depend on tizen-build >= 2012.10.10.1
+
+* Wed Oct 24 2012 Qiang Zhang <qiang.z.zhang@intel.com> 0.2
+- fix getlogin() fail issue on some system
+- add function worker_thread() to clean up build worker in one place
+- refine incremental build, don't need force running gbs in top git dir
+- support multiple spec files building in one package.
+- fix Ctrl + C issue:
+    - if one package build for a long time(>15 mins), sudo req passwd again
+    - sudo timeout issue, which will result in endless loop
+- expand ~ in TIZEN_BUILD_ROOT, to fix create dir fail issue
+- collect export error packages & report, and return None 0 if any error occur
+- support building one spec file for --spec option used in gbs build
+- refine error report in depanneur. Three types of error: export error,
+  expansion error and rpmbuild error, detail expansion info and build log are
+  attached behind packages.
+- dependency circle check: if circle found from package dependency, the circle
+  link is printed and exit. currently, we don't support circle building.
+    - break expand_deps into two functions: one is refresh_repo(), which is
+      used to update %repo, which store repodata info, including 'provide' and
+      'depend' info, and another fuction is expand_deps().
+    - Add get_deps() to get direct dependency of specified package(specfile).
+    - Using Depth-first search algorithrm to try to find circle
+- use bsd_glob to replace glob to fix thread crash issue in openSUSE 12.2
+  (perl 5.16)
+- add --debug option for 'gbs export' if --debug specified
+- Code cleanup
+   - fix perlcritic's warning
+   - remove useless sub wanted
+   - remove useless variables in git_wantted
+   - remove trailing spaces
+
+* Tue Sep 11 2012 Qiang Zhang <qiang.z.zhang@intel.com> 0.1
+- first version of depanneur, including the following features:
+  * dependency build wit correct dependendcy order
+  * parallel build with customized threads pool
+  * full build to specify a top dir of all packages tree
+  * support generate local repo once build finished
+
+

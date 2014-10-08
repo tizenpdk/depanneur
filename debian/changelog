@@ -1,3 +1,12 @@
+depanneur (0.13.3) unstable; urgency=high
+
+  * add comments for core builder code
+  * fix build with --include-all on development branch(orphan-packaging mode)
+  * fix leaking of temporary files
+  * support --fallback-to-native option of gbs
+
+ -- Li Jinjing <jinjingx.li@intel.com> Wed, 8 Oct 2014 10:56:15 +0800
+
 depanneur (0.13.2) unstable; urgency=high
 
   * depend on new build

@@ -123,6 +123,7 @@ my $overwrite = 0;      # rebuilt packages if it's already built out
 my $MAX_THREADS = 1;    # max threads depanneur creates
 my $extra_packs = "";   # extra packages which should install to build root
 my $ccache = 0;         # use ccache to speed up building
+my $icecream = 0;       # use icecream to specify the number of parallel processes
 my $noinit = 0;         # don't check build root, just go into it and building
 my $keep_packs = 0;     # don't remove useless rpm packages from build root
 my @defines;            # define extra macros for 'rpmbuild'
@@ -194,6 +195,7 @@ GetOptions (
     "threads=s" => \$MAX_THREADS,
     "extra-packs=s" => \$extra_packs,
     "ccache" => \$ccache,
+    "icecream=s" => \$icecream,
     "noinit" => \$noinit,
     "keep-packs" => \$keep_packs,
     "define=s" => \@defines,
@@ -1614,6 +1616,7 @@ sub build_package {
     push @args, "--arch $archpath";
     push @args, "$srpm_filename";
     push @args, "--ccache" if ($ccache);
+    push @args, "--icecream $icecream" if ($icecream);
     push @args, "--baselibs" if ($create_baselibs);
     if (! $extra_packs eq "") {
         my $packs = join(' ', split(',', $extra_packs));

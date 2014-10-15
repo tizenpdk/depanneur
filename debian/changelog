@@ -1,3 +1,16 @@
+depanneur (0.14) unstable; urgency=high
+
+  * fix build with --include-all on development branch(orphan-packaging mode)
+  * support --fallback-to-native option of gbs
+  * support --icecream option of gbs
+  * support new arch mips and mipsel for gbs
+  * support --skip-srcrpm option of gbs
+  * fix leaking of temporary files
+  * add rpm changelog
+  * add comments for core builder code
+
+ -- Li Jinjing <jinjingx.li@intel.com> Wed, 15 Oct 2014 10:56:15 +0800
+
 depanneur (0.13.1) unstable; urgency=high
 
   * ignore already finished packages for dependency resolving

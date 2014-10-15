@@ -1,3 +1,13 @@
+* Wed Oct 15 2014 Li Jinjing <jinjingx.li@intel.com> 0.14
+- fix build with --include-all on development branch(orphan-packaging mode)
+- support --fallback-to-native option of gbs
+- support --icecream option of gbs
+- support new arch mips and mipsel for gbs
+- support --skip-srcrpm option of gbs
+- fix leaking of temporary files
+- add rpm changelog
+- add comments for core builder code
+
 * Thu Jun 12 2014 Qiang Zhang <qiang.z.zhang@intel.com> 0.13.1
 - ignore already finished packages for dependency resolving
 - ignore already skipped packages for dependency resolving

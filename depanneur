@@ -86,7 +86,7 @@ my $includeall = 0;             # build all content of including uncommitted and
                                 # untracked files
 my $upstream_branch = "";       # upstream branch name
 my $upstream_tag = "";          # upstream tag name used for generate tar ball
-my $fallback_to_native = "";    # fallback to native packaging mode if export fails
+my $fallback_to_native = 0;     # fallback to native packaging mode if export fails
 my $squash_patches_until = "";  # Commit_ID used for generate one patch
 my $no_patch_export = 0;        # don't generate patches if it's 1
 my $packaging_dir = "packaging";# packaging dir

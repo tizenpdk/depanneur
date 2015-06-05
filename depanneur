@@ -1605,7 +1605,10 @@ sub build_package {
     push @args, "--uid $zuid:$zgid";
     my $nprocessors = 2;
     if ($^O eq "linux") {
-        $nprocessors = int(sysconf(SC_NPROCESSORS_ONLN));
+        $nprocessors = int(int(sysconf(SC_NPROCESSORS_ONLN))/int($MAX_THREADS));
+        if ($nprocessors < 1) {
+            $nprocessors = 1;
+        }
     } else {
         warning("depanneur only support linux platform");
     }

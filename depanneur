@@ -86,7 +86,7 @@ my $includeall = 0;             # build all content of including uncommitted and
                                 # untracked files
 my $upstream_branch = "";       # upstream branch name
 my $upstream_tag = "";          # upstream tag name used for generate tar ball
-my $fallback_to_native = 0;     # fallback to native packaging mode if export fails
+my $fallback_to_native = 0;    # fallback to native packaging mode if export fails
 my $squash_patches_until = "";  # Commit_ID used for generate one patch
 my $no_patch_export = 0;        # don't generate patches if it's 1
 my $packaging_dir = "packaging";# packaging dir
@@ -96,6 +96,7 @@ my $deps_build = 0;             # build all packages specified packaged depend o
 my $dryrun = 0;                 # just show build order and don't build actually
 my $help = 0;                   # show help information
 my $keepgoing = 0;              # TODO: clean up
+my $fail_fast = 0;              # stop build immediately if one of packages fails
 my $clean_repos = 0;            # clean corresponding local rpm repos
 my $create_baselibs = 0;        # create baselibs packages if baselibs.conf exists
 my $skip_srcrpm = 0;            # don't generate source rpm package if $skip_srcrpm == 1
@@ -189,6 +190,7 @@ GetOptions (
     "dryrun" => \$dryrun,
     "help|?" => \$help,
     "keepgoing" => \$keepgoing,
+    "fail-fast" => \$fail_fast,
     "overwrite" => \$overwrite,
     "debug" => \$debug,
     "incremental" => \$incremental,
@@ -241,6 +243,9 @@ Available options:
     --keepgoing
       If a package build fails, do not abort and continue
       building other packages in the queue.
+
+    --fail-fast
+      If one of packages build fails, stop whole build immediately.
 
     --incremental
       Build a package from the local git tree directly.
@@ -1496,6 +1501,11 @@ sub worker_thread {
         push(@done, $name);
         if ($status == 0) {
             $dirty = 1;
+        }
+
+        if ($fail_fast && $status == 1) {
+            info("build failed, exit...");
+            $TERM = 1;
         }
     }
 

@@ -95,8 +95,8 @@ my $rdeps_build = 0;            # build all packages depend on specified package
 my $deps_build = 0;             # build all packages specified packaged depend on
 my $dryrun = 0;                 # just show build order and don't build actually
 my $help = 0;                   # show help information
-my $keepgoing = 0;              # TODO: clean up
-my $fail_fast = 0;		# stop build immediately if one of packages fails
+my $keepgoing = "on";           # If a package build fails, do not abort and continue
+my $fail_fast = 0;		          # stop build immediately if one of packages fails
 my $clean_repos = 0;            # clean corresponding local rpm repos
 my $create_baselibs = 0;        # create baselibs packages if baselibs.conf exists
 my $skip_srcrpm = 0;            # don't generate source rpm package if $skip_srcrpm == 1
@@ -189,7 +189,7 @@ GetOptions (
     "rdeps"  => \$rdeps_build,
     "dryrun" => \$dryrun,
     "help|?" => \$help,
-    "keepgoing" => \$keepgoing,
+    "keepgoing=s" => \$keepgoing,
     "fail-fast" => \$fail_fast,
     "overwrite" => \$overwrite,
     "debug" => \$debug,
@@ -240,7 +240,7 @@ Available options:
     --overwrite
       Overwrite existing binaries.
 
-    --keepgoing
+    --keepgoing <on/off>
       If a package build fails, do not abort and continue
       building other packages in the queue.
 
@@ -1502,7 +1502,7 @@ sub worker_thread {
         if ($status == 0) {
             $dirty = 1;
         }
-        if ($fail_fast && $status == 1) {
+        if ($keepgoing eq "off" && $status == 1) {
             info("build failed, exit...");
             $TERM = 1;
         }

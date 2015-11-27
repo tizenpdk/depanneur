@@ -19,6 +19,7 @@ BEGIN {
 use YAML qw(LoadFile);
 use threads;
 use threads::shared;
+use Thread::Queue;
 use File::Find ();
 use Term::ANSIColor qw(:constants);
 use File::Path;
@@ -128,6 +129,7 @@ my $ccache = 0;         # use ccache to speed up building
 my $icecream = 0;       # use icecream to specify the number of parallel processes
 my $noinit = 0;         # don't check build root, just go into it and building
 my $keep_packs = 0;     # don't remove useless rpm packages from build root
+my $thread_export = 0;  # use thread when gbs export source code
 my @defines;            # define extra macros for 'rpmbuild'
 my $arg_spec = "";      # spec file to be built this time
 my $start_time = "";    # build start time
@@ -201,6 +203,7 @@ GetOptions (
     "icecream=s" => \$icecream,
     "noinit" => \$noinit,
     "keep-packs" => \$keep_packs,
+    "thread-export" => \$thread_export,
     "define=s" => \@defines,
     "spec=s" => \$arg_spec,
     "clean-repos" => \$clean_repos,
@@ -656,6 +659,10 @@ sub gbs_export {
     if ($no_patch_export == 1) {
         push @args, "--no-patch-export";
     }
+    # print only error messages cause info message appear confused when to use thread
+    if ($thread_export == 1){
+        push @args, " 2>&1 | grep -v warning | grep -v Creating";
+    }
     $cmd = join(" ", @args);
     return my_system($cmd);
 }
@@ -750,6 +757,7 @@ sub prepare_git {
     my $config = shift;
     my $base = shift;
     my $spec = shift;
+    my $packs_queue = shift;
     my $spec_file = basename($spec);
 
     if ($includeall == 0 || $spec_commit ne "") {
@@ -817,7 +825,7 @@ sub prepare_git {
     # check whether it's really successful to export
     if ( -e "$pkg_path/$cache_key/$spec_file" ){
         # prepare to build the packages had been exported
-        push(@packs, {
+        $packs_queue->enqueue({
             filename => "$pkg_path/$cache_key/$spec_file",
             project_base_path => $base,
         });
@@ -2028,8 +2036,36 @@ if ($style eq 'git') {
     }
     if ($incremental == 0) {
         info("prepare sources...");
-        foreach my $pack (@pre_packs) {
-            prepare_git($config, $pack->{"project_base_path"}, $pack->{"filename"});
+        my $packs_queue = Thread::Queue->new();
+        if ($thread_export == 1){
+            my $data_queue = Thread::Queue->new();
+            foreach my $pack (@pre_packs) {
+                $data_queue->enqueue($pack);
+            }
+            my $thread_num = int(sysconf(SC_NPROCESSORS_ONLN));
+            for (0..$thread_num) {
+                $data_queue->enqueue(undef);
+                threads->create(sub {
+                    while (my $pack = $data_queue->dequeue()) {
+                        prepare_git($config, $pack->{"project_base_path"}, $pack->{"filename"}, $packs_queue);
+                    }
+                });
+            }
+            foreach (threads->list()) { $_->join(); }
+            # Check error
+            foreach (threads->list()) {
+                   if (my $chk_err = $_->error()){
+                           warning("export thread error: $chk_err\n");
+                   }
+           }
+        } else {
+            foreach my $pack (@pre_packs) {
+                prepare_git($config, $pack->{"project_base_path"}, $pack->{"filename"}, $packs_queue);
+            }
+        }
+        $packs_queue->enqueue(undef);
+        while (my $pack = $packs_queue->dequeue()) {
+            push @packs, $pack;
         }
     } else {
         @packs = @pre_packs;

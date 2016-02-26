@@ -1,4 +1,4 @@
-ALL     ALL=(ALL) NOPASSWD: /bin/mount -o bind * */scratch.*
+ALL     ALL=(ALL) NOPASSWD: /bin/mount -o bind /*/* */scratch.*
 ALL     ALL=(ALL) NOPASSWD: /bin/umount -l */scratch.*
 ALL     ALL=(ALL) NOPASSWD: /bin/umount -l -f */scratch.*
 ALL     ALL=(ALL) NOPASSWD: /bin/mkdir -p */scratch.*

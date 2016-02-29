@@ -11,7 +11,11 @@ Requires:       perl(YAML)
 Requires:       perl(JSON)
 Requires:       perl(HTML::Template)
 Requires:       tizen-build >= 20140612
+%if 0%{?centos_ver} == 7
+
+%else
 Requires:       tizen-build-initvm-i586 >= 20140612
+%endif
 %ifarch         x86_64
 Requires:       tizen-build-initvm-x86_64 >= 20140612
 %endif

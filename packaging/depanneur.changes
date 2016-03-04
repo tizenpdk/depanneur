@@ -1,3 +1,7 @@
+* Fri Mar 4 2016 Zhang Yang <y0169.zhang@samsung.com> 0.15
+- add --fail-fast option of gbs
+- fix CentOS 7 require
+
 * Wed Oct 15 2014 Li Jinjing <jinjingx.li@intel.com> 0.14
 - fix build with --include-all on development branch(orphan-packaging mode)
 - support --fallback-to-native option of gbs

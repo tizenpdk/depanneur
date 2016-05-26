@@ -1,3 +1,9 @@
+depanneur (0.15.1) unstable; urgency=high
+
+  * adapt to new build
+
+ -- Zhang Yang <y0169.zhang@samsung.com> Thu, 26 May 2016 09:30:00 +0800
+
 depanneur (0.15) unstable; urgency=high
 
   * add --faild-fast option of gbs

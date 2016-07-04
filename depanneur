@@ -161,7 +161,8 @@ my %tmp_expansion_errors = ();
 my $packages_built :shared  = 0; # if there's package build succeeded
 my %build_status_json = ();      # final json report data
 my %workers = ();                # build workers: { 'state' => 'idle'|'busy' , 'tid' => undef|$tid };
-
+my @build_order = ();  #The build order for all packages
+my $get_order = 0; #Bool :  @build_order is empty
 
 GetOptions (
     "repository=s" => \@repos,
@@ -1248,11 +1249,35 @@ sub check_circle {
 }
 
 #---------------------------------------------------------------------
+#Get one package's dependence
+#Eg: A->B->C->(D H)
+#if we get_ddeps_list(A) ,will get @{D H C B}
+#---------------------------------------------------------------------
+sub get_ddeps_list {
+     my $pack = shift;
+     my @list = ();
+
+     if (! defined($pkgddeps{$pack}) ||
+	scalar $pkgddeps{$pack} == 0
+     ) {
+	return @list;
+     }
+
+     for my $name  (@{ $pkgddeps{$pack} }) {
+		push @list, get_ddeps_list($name);
+		push @list, $name;
+     }
+
+     return @list;
+}
+
+#---------------------------------------------------------------------
 # generate topological sort sequence from global %pkgddeps
 #---------------------------------------------------------------------
 sub get_top_order {
     my @top_order = ();
     my %ref = ();
+    my $max = 0;
 
     for my $pack (sort keys %pkgddeps) {
         $ref{$pack} = 0;
@@ -1265,24 +1290,48 @@ sub get_top_order {
         }
     }
 
+    for my $pkg (sort keys %ref) {
+	if ($max < ($ref{$pkg})) {
+		$max = ($ref{$pkg});
+	}
+    }
+
     while (@top_order != scalar (keys %pkgddeps)) {
-        my @candlist = ();
+
         for my $pkg (sort keys %ref) {
-            if ($ref{$pkg} == 0) {
-                push @candlist, $pkg;
+            if ($ref{$pkg} == $max) {
                 push @top_order, $pkg;
                 delete $ref{$pkg};
-            }
-        }
-        for (@candlist) {
-            next if (! defined($pkgddeps{$_}));
-            for (@{$pkgddeps{$_} }) {
-                $ref{$_} -= 1;
-            }
+            } else {
+		$ref{$pkg} += 1;
+	    }
         }
     }
 
-    return @top_order;
+    my @final_order = ();
+    for my $name (@top_order) {
+	next if (! defined($pkgddeps{$name}));
+	next if ( grep $_ eq $name,  @final_order) ;
+	my @cnt = @{$pkgddeps{$name} };
+	if (scalar(@cnt) == 0) {
+		push @final_order, $name;
+	} else {
+		for my $list_pk (@cnt){
+			next if ( grep $_ eq $list_pk,  @final_order);
+
+			my @tmp_order = get_ddeps_list($list_pk);
+			for my $pk (@tmp_order) {
+				if (! grep $_ eq $pk,  @final_order) {
+					push @final_order, $pk;
+				}
+			}
+			push @final_order, $list_pk;
+		}
+		push @final_order, $name;
+	}
+    }
+
+     return @final_order;
 }
 
 
@@ -1372,6 +1421,10 @@ sub update_pkgddeps {
     # pkgddeps  => pkgdeps
     # pkgrddeps => pkgrdeps
     my @top_order = get_top_order();
+    if ($get_order == 0) {
+    	@build_order = @top_order;
+	$get_order = 0;
+    }
 
     %pkgdeps = ();
     %pkgrdeps = ();
@@ -2247,14 +2300,15 @@ while (! $TERM) {
             refresh_repo();
             update_pkgdeps();
             update_pkgddeps();
-            if (check_circle() == 1) {
-                info("circle found, exit...");
-                exit 1;
-            }
+            #if (check_circle() == 1) {
+            #    info("circle found, exit...");
+            #    exit 1;
+            #}
 
             $dirty = 0;
         }
-        foreach my $name (keys %to_build) {
+
+        foreach my $name (@build_order) {
             # skip the followint packages:
             #  - packages already done (in @done list)
             #  - packages skipped (in @skipped list)
@@ -2334,8 +2388,14 @@ while (! $TERM) {
         }
 
         for (; $needed && ! $TERM; $needed--) {
-            my $job = shift(@order);
-            last if (! $job);
+
+	    my $job ;
+	    if (scalar (@order) != 0) {
+		$job = shift(@order);
+	    }
+	    else {
+		last ;
+	    }
 
             my $worker = find_idle();
             my $index;

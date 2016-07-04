@@ -1393,6 +1393,7 @@ sub update_pkgdeps
 # and its dependencies and rdependencies
 #---------------------------------------------------------------------
 sub update_pkgddeps {
+    %pkgddeps = ();
     foreach my $name (keys %to_build) {
         if(! (grep $_ eq $name, @skipped) &&
            ! (grep $_ eq $name, @done)) {
@@ -1436,7 +1437,7 @@ sub update_pkgddeps {
     my @top_order = get_top_order();
     if ($get_order == 0) {
     	@build_order = @top_order;
-	$get_order = 0;
+	$get_order = 1;
     }
 
     %pkgdeps = ();
@@ -2197,6 +2198,7 @@ if (@bins) {
     if ($noinit == 0 && $incremental == 0) {
         resolve_skipped_packages();
     }
+    $get_order = 0;
     update_pkgdeps();
     update_pkgddeps();
 }

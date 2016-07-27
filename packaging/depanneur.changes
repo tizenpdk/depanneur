@@ -1,3 +1,6 @@
+* Thu May 26 2016 Zhang Yang <y0169.zhang@samsung.com> 0.15.1
+- adapt to new build
+
 * Fri Mar 4 2016 Zhang Yang <y0169.zhang@samsung.com> 0.15
 - add --fail-fast option of gbs
 - fix CentOS 7 require

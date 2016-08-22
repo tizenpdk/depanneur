@@ -5,6 +5,7 @@ use warnings;
 use File::Spec::Functions;
 use JSON;
 use HTML::Template;
+use Time::HiRes qw ( sleep time );
 
 # Pretreatment for adding build path to search
 BEGIN {
@@ -1808,9 +1809,8 @@ sub build_package {
         chomp($srcrpmdirpath);
         mkdir_p "$success_logs_path/$name-$version-$release";
         if (-e "$scratch/.build.log") {
-            my_system ("cp $scratch/.build.log $success_logs_path/$name-$version-$release/log.txt");
+            my_system ("sudo /bin/mv $scratch/.build.log $success_logs_path/$name-$version-$release/log.txt");
             $succeeded{"$name"} = "$success_logs_path/$name-$version-$release/log.txt";
-            my_system ("sudo /bin/rm -f $scratch/.build.log ");
         }
         # Detach and terminate
         {
@@ -1821,19 +1821,18 @@ sub build_package {
                 #copy the new ones to local repo
                 update_repo_with_rpms(\%srpmpaths, @srpms);
                 if ($skip_srcrpm == 0){
-                   my_system ("cp $scratch/$srcrpmdirpath/*.rpm $srpm_repo_path");
+                   my_system ("sudo /bin/mv $scratch/$srcrpmdirpath/*.rpm $srpm_repo_path");
                 }
             }
             if (my @rpms = bsd_glob "$scratch/$rpmdirpath/*/*.rpm") {
                 #remove old rpms in local repo
                 #copy the new ones to local repo
                 update_repo_with_rpms (\%rpmpaths, @rpms);
-                my_system ("cp $scratch/$rpmdirpath/*/*.rpm $rpm_repo_path");
+                my_system ("sudo /bin/mv  $scratch/$rpmdirpath/*/*.rpm $rpm_repo_path");
             }
 
             my_system("$build_dir/createdirdeps $rpm_repo_path > $order_dir/.repo.cache.local ");
             my_system("echo D: >> $order_dir/.repo.cache.local");
-            # Merge local repo catch and remote repo cache
             my_system("cat $order_dir/.repo.cache.local $order_dir/.repo.cache.remote >$order_dir/.repo.cache");
         }
         info("finished building $name");
@@ -1843,8 +1842,7 @@ sub build_package {
         mkdir_p "$fail_logs_path/$name-$version-$release";
         if ( -f "$scratch/.build.log" ) {
             # move failed log from build root
-            my_system ("cp $scratch/.build.log $fail_logs_path/$name-$version-$release/log.txt");
-            my_system ("sudo /bin/rm -f $scratch/.build.log");
+            my_system ("sudo /bin/mv $scratch/.build.log $fail_logs_path/$name-$version-$release/log.txt");
             $errors{"$name"} = "$fail_logs_path/$name-$version-$release/log.txt";
             warning("build failed, Leaving the logs in $fail_logs_path/$name-$version-$release/log.txt");
         } else {
@@ -2333,7 +2331,7 @@ if ($debug) {
 # be processed
 while (! $TERM) {
     my @order = ();
-    my @o = ();
+    my @order_clean = ();
 
     {
         # update glocal vars %repo and %pkgdeps etc.
@@ -2380,9 +2378,18 @@ while (! $TERM) {
                 }
                 if ($add == 1 ) {
                     push(@order, $name);
+		    last;
                 }
-            }
+            } else {
+		push(@order_clean, $name);
+	    }
         }
+
+	#remove unuseful package name from  build_order
+	foreach my $u_name (@order_clean) {
+		@build_order = grep { $_ ne $u_name} @build_order;
+	}
+
         # No candidate packges and all thread works are idle, and pkgdeps
         # is updated, in this case, set packages in %tmp_expansion_errors
         # as real expansion_errors, and all packages depend on these packages
@@ -2406,14 +2413,10 @@ while (! $TERM) {
     # so just wait 1 second and do another resolve procedure
     if (@order == 0) {
         # Waiting thread workers done, then re-calculate ready packages
-        sleep(1);
+        sleep(0.1);
         next;
-    } else {
-        info("next pass:");
-        foreach my $o (@order) {
-            print $o . "\n";
-        }
     }
+
     if ($dryrun) {
         exit 1
     }
@@ -2428,7 +2431,7 @@ while (! $TERM) {
         # There is no idle thread
         if ($needed == 0) {
             # Waiting for build threads finish
-            sleep(1);
+            sleep(0.1);
             next;
         }
 

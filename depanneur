@@ -1460,6 +1460,22 @@ sub update_pkgddeps {
 }
 
 #---------------------------------------------------------------------
+# update tmp_expansion_errors  when any of packages have been built
+#---------------------------------------------------------------------
+sub update_expansion_errors {
+    my %new_expansion_errors = ();
+    foreach my $name (%tmp_expansion_errors) {
+        next if(! defined($to_build{$name}) );
+        my $fn = $to_build{$name}->{filename};
+        my @bdeps = expand_deps($fn);
+        if (!shift @bdeps ) {
+                $new_expansion_errors{$name} = [@bdeps];
+        }
+    }
+    %tmp_expansion_errors = %new_expansion_errors;
+}
+
+#---------------------------------------------------------------------
 # Figure out its dependencies and rdependencies
 # of a specified package, all of them will be build
 # @pkglist: package list need to be resolve
@@ -2329,8 +2345,9 @@ while (! $TERM) {
         if ($dirty) {
             # there is any package has been built
             refresh_repo();
-            update_pkgdeps();
-            update_pkgddeps();
+	    update_expansion_errors();
+            #update_pkgdeps();
+            #update_pkgddeps();
             #if (check_circle() == 1) {
             #    info("circle found, exit...");
             #    exit 1;

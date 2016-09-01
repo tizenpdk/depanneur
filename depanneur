@@ -19,6 +19,7 @@ BEGIN {
 use YAML qw(LoadFile);
 use threads;
 use threads::shared;
+use Thread::Queue;
 use File::Find ();
 use Term::ANSIColor qw(:constants);
 use File::Path;
@@ -751,6 +752,7 @@ sub prepare_git {
     my $config = shift;
     my $base = shift;
     my $spec = shift;
+    my $packs_queue = shift;
     my $spec_file = basename($spec);
 
     if ($includeall == 0 || $spec_commit ne "") {
@@ -818,7 +820,7 @@ sub prepare_git {
     # check whether it's really successful to export
     if ( -e "$pkg_path/$cache_key/$spec_file" ){
         # prepare to build the packages had been exported
-        push(@packs, {
+	$packs_queue->enqueue({
             filename => "$pkg_path/$cache_key/$spec_file",
             project_base_path => $base,
         });
@@ -2080,9 +2082,34 @@ if ($style eq 'git') {
     }
     if ($incremental == 0) {
         info("prepare sources...");
-        foreach my $pack (@pre_packs) {
-            prepare_git($config, $pack->{"project_base_path"}, $pack->{"filename"});
-        }
+
+	my $packs_queue = Thread::Queue->new();
+	my $data_queue = Thread::Queue->new();
+	foreach my $pack (@pre_packs) {
+		$data_queue->enqueue($pack);
+	}
+
+	my $thread_num = int(sysconf(SC_NPROCESSORS_ONLN));
+	for (0..$thread_num) {
+		$data_queue->enqueue(undef);
+		threads->create(sub {
+			while (my $pack = $data_queue->dequeue()) {
+				prepare_git($config, $pack->{"project_base_path"}, $pack->{"filename"}, $packs_queue);
+			}
+		});
+	}
+	foreach (threads->list()) { $_->join(); }
+	# Check error
+	foreach (threads->list()) {
+		if (my $chk_err = $_->error()){
+			warning("export thread error: $chk_err\n");
+		}
+	}
+	$packs_queue->enqueue(undef);
+	while (my $pack = $packs_queue->dequeue()) {
+		push @packs, $pack;
+	}
+
     } else {
         @packs = @pre_packs;
     }
@@ -2092,7 +2119,6 @@ if ($style eq 'git') {
         File::Find::find({wanted => \&obs_wanted}, $package_path );
     }
 }
-
 if ($clean_repos && -e "$localrepo/$dist/$arch") {
     info("cleaning up local repo: $rpm_repo_path ...");
     my_system("rm -rf $rpm_repo_path/*");

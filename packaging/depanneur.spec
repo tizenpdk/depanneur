@@ -48,3 +48,4 @@ build mode and incremental build mode.
 %{_bindir}/depanneur
 %{_sysconfdir}/sudoers.d/gbs
 %{_datadir}/depanneur/build-report.tmpl
+%{_datadir}/depanneur/not-export

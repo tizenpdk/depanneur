@@ -25,3 +25,6 @@ install:
 	install -m644 \
         data/build-report.tmpl \
         $(DESTDIR)$(datadir)/
+	install -m644 \
+        data/not-export \
+        $(DESTDIR)$(datadir)/

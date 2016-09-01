@@ -167,6 +167,8 @@ my %build_status_json = ();      # final json report data
 my %workers = ();                # build workers: { 'state' => 'idle'|'busy' , 'tid' => undef|$tid };
 my @build_order = ();  #The build order for all packages
 my $get_order = 0; #Bool :  @build_order is empty
+my $not_export_cf = "/usr/share/depanneur/not-export";
+my @not_export = ();
 
 GetOptions (
     "repository=s" => \@repos,
@@ -401,6 +403,21 @@ sub is_archive_filename {
     }
 
     return 0;
+}
+
+#---------------------------------------------------------------------
+# read packages that not need export for accel
+#---------------------------------------------------------------------
+sub read_not_export {
+    my $file = shift;
+
+    open (CF, "<", $file) or print "Error: open file: $file error!\n $!\n" and return;
+    while (<CF>) {
+        chomp();
+        next if (/^s*#/);
+        push @not_export, $_;
+    }
+    close (CF);
 }
 
 if ($incremental == 1 && $style ne 'git') {
@@ -1565,6 +1582,44 @@ sub resolve_skipped_packages() {
     }
 }
 
+#---------------------------------------------------------------------
+# Get source base name
+#---------------------------------------------------------------------
+sub get_source_base_name {
+    my $source_name = shift;
+    my $base_name = $source_name;
+    my @arhive_formats = ('tar', 'zip');
+    my %archive_ext_aliases = ( 'tgz' => ['tar', 'gzip' ],
+                                'tbz2'=> ['tar', 'bzip2'],
+                                'tlz' => ['tar', 'lzma' ],
+                                'txz' => ['tar', 'xz'   ]
+                               );
+    my %compressor_opts = ( 'gzip'  => [['-n'], 'gz'  ],
+                            'bzip2' => [[],     'bz2' ],
+                            'lzma'  => [[],     'lzma'],
+                            'xz'    => [[],     'xz'  ]
+                           );
+
+    my @split = split(/\./, $source_name);
+    if (scalar(@split) > 1) {
+        if (exists $archive_ext_aliases{$split[-1]}) {
+            $base_name = join(".", @split[0..scalar(@split)-2]);
+        } elsif (grep($_ eq $split[-1], @arhive_formats)) {
+            $base_name = join(".", @split[0..scalar(@split)-2]);
+        } else {
+            foreach my $value (values %compressor_opts) {
+                if ($value->[1] eq $split[-1]) {
+                   $base_name = join(".", @split[0..scalar(@split)-2]);
+                   if (scalar(@split) > 2 && grep($_ eq $split[-2], @arhive_formats)) {
+                      $base_name = join(".", @split[0..scalar(@split)-3]);
+                   }
+                }
+            }
+        }
+    }
+
+    return $base_name;
+}
 
 #---------------------------------------------------------------------
 # the control func of thread
@@ -1688,8 +1743,14 @@ sub build_package {
     my $spec_name = basename($to_build{$name}->{filename});
     my $pkg_path = "$build_root/local/sources/$dist/$name-$version-$release";
     my $srpm_filename = "";
+    my $not_ex;
     if ( $style eq "git" && $incremental == 0 ) {
-        $srpm_filename = "$pkg_path/$spec_name";
+        $not_ex = grep /^$name$/, @not_export;
+        if ($not_ex) {
+            $srpm_filename = $to_build{$name}->{filename};
+        } else {
+            $srpm_filename = "$pkg_path/$spec_name";
+        }
     } else {
         $srpm_filename = $to_build{$name}->{filename};
     }
@@ -1768,7 +1829,13 @@ sub build_package {
     }
 
     my $cmd = "";
-    my $builddir = "$scratch/home/abuild/rpmbuild/BUILD/$name-$version";
+    my $builddir;
+    if ($not_ex) {
+        my $base_source = get_source_base_name($to_build{$name}->{source});
+        $builddir = "$scratch/home/abuild/rpmbuild/BUILD/$base_source";
+    } else {
+        $builddir = "$scratch/home/abuild/rpmbuild/BUILD/$name-$version";
+    }
     my $source_tar = "";
     if (exists $to_build{$name}->{source}) {
         $source_tar = "$to_build{$name}->{project_base_path}/$packaging_dir/$to_build{$name}->{source}";
@@ -1809,7 +1876,24 @@ sub build_package {
         my_system("tar -zcf $source_tar $tmp_dir") if ($source_tar ne "");
     }
 
-    push @args, "--stage=\"-bb\"" if ($skip_srcrpm == 1);
+    if ($not_ex) {
+        if ( -d "$builddir") {
+            my_system("rm -rf $builddir");
+        }
+        my $project_base_path = $to_build{$name}->{project_base_path};
+        my_system("sudo /bin/mkdir -p $builddir");
+        my $mount = "sudo /bin/mount -o bind $project_base_path $builddir";
+        my_system($mount);
+        my $packaing_files = dirname($to_build{$name}->{filename});
+        my_system("cp -a $packaing_files/* $project_base_path/");
+        my $tmp_dir = abs_path(tempdir(CLEANUP=>1));
+        my_system("tar -zcf $source_tar $tmp_dir") if ($source_tar ne "");
+        push @args, "--short-circuit --stage=\"-bs\"";
+        push @args, "--no-topdir-cleanup";
+    } else {
+        push @args, "--stage=\"-bb\"" if ($skip_srcrpm == 1);
+    }
+
     $cmd = join(" ", @args);
     debug($cmd);
     my $ret = my_system ($cmd);
@@ -1818,6 +1902,10 @@ sub build_package {
         #FIXME: more safe way needed to remove this fake source tar
         my_system("rm -f $source_tar") if ($source_tar ne "");
         safe_umount($builddir) if ($incremental == 1);
+    }
+    if ($not_ex) {
+        my_system("rm -f $source_tar") if ($source_tar ne "");
+        safe_umount($builddir)
     }
 
     # Save build config to build root for --noinit use
@@ -2115,37 +2203,42 @@ if ($style eq 'git') {
     }
     if ($incremental == 0) {
         info("prepare sources...");
-        my $packs_queue = Thread::Queue->new();
-        if ($thread_export == 1){
-            my $data_queue = Thread::Queue->new();
-            foreach my $pack (@pre_packs) {
-                $data_queue->enqueue($pack);
-            }
-            my $thread_num = int(sysconf(SC_NPROCESSORS_ONLN));
-            for (0..$thread_num) {
-                $data_queue->enqueue(undef);
-                threads->create(sub {
-                    while (my $pack = $data_queue->dequeue()) {
-                        prepare_git($config, $pack->{"project_base_path"}, $pack->{"filename"}, $packs_queue);
-                    }
-                });
-            }
-            foreach (threads->list()) { $_->join(); }
-            # Check error
-            foreach (threads->list()) {
-                   if (my $chk_err = $_->error()){
-                           warning("export thread error: $chk_err\n");
-                   }
-           }
-        } else {
-            foreach my $pack (@pre_packs) {
-                prepare_git($config, $pack->{"project_base_path"}, $pack->{"filename"}, $packs_queue);
-            }
-        }
-        $packs_queue->enqueue(undef);
-        while (my $pack = $packs_queue->dequeue()) {
-            push @packs, $pack;
-        }
+        read_not_export($not_export_cf);
+
+	my $packs_queue = Thread::Queue->new();
+	my $data_queue = Thread::Queue->new();
+	foreach my $pack (@pre_packs) {
+                my $name = basename($pack->{"project_base_path"});
+                my $r = grep /^$name$/, @not_export;
+                if ($r) {
+                    info("skip export $name for accel...");
+                    push @packs, $pack;
+                } else {
+                    $data_queue->enqueue($pack);
+                }
+	}
+
+	my $thread_num = int(sysconf(SC_NPROCESSORS_ONLN));
+	for (0..$thread_num) {
+		$data_queue->enqueue(undef);
+		threads->create(sub {
+			while (my $pack = $data_queue->dequeue()) {
+				prepare_git($config, $pack->{"project_base_path"}, $pack->{"filename"}, $packs_queue);
+			}
+		});
+	}
+	foreach (threads->list()) { $_->join(); }
+	# Check error
+	foreach (threads->list()) {
+		if (my $chk_err = $_->error()){
+			warning("export thread error: $chk_err\n");
+		}
+	}
+	$packs_queue->enqueue(undef);
+	while (my $pack = $packs_queue->dequeue()) {
+		push @packs, $pack;
+	}
+
     } else {
         @packs = @pre_packs;
     }

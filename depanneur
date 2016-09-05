@@ -130,6 +130,7 @@ my $ccache = 0;         # use ccache to speed up building
 my $icecream = 0;       # use icecream to specify the number of parallel processes
 my $noinit = 0;         # don't check build root, just go into it and building
 my $keep_packs = 0;     # don't remove useless rpm packages from build root
+my $use_higher_deps = 0; # which repo provides higher version deps, use it
 my @defines;            # define extra macros for 'rpmbuild'
 my $arg_spec = "";      # spec file to be built this time
 my $start_time = "";    # build start time
@@ -206,6 +207,7 @@ GetOptions (
     "icecream=s" => \$icecream,
     "noinit" => \$noinit,
     "keep-packs" => \$keep_packs,
+    "use-higher-deps" => \$use_higher_deps,
     "define=s" => \@defines,
     "spec=s" => \$arg_spec,
     "clean-repos" => \$clean_repos,
@@ -984,7 +986,18 @@ sub refresh_repo {
         next if $req{$1};
         $req{$1} = $2;
       } elsif (/^I:(.*?)-\d+\/\d+\/\d+: (.*)$/) {
-        if ($ids{$1} && !$packs_done{$1} && defined($pkgF) && defined($pkgP) && defined($pkgR)) {
+        my $r = 0;
+        if ($use_higher_deps == 1) {
+          $r = 1;
+        } else {
+          if ($packs_done{$1}) {
+            $r = 0;
+          } else {
+            $r = 1;
+          }
+        }
+
+        if ($ids{$1} && ($r == 1) && defined($pkgF) && defined($pkgP) && defined($pkgR)) {
           my $i = $1;
           my $oldid = $ids{$1};
           my $newid = $2;
@@ -1763,6 +1776,7 @@ sub build_package {
     push @args, "--jobs " . $nprocessors * 2;
     push @args, "--no-init" if ($noinit == 1);
     push @args, "--keep-packs" if ($keep_packs == 1);
+    push @args, "--use-higher-deps" if ($use_higher_deps == 1);
     push @args, "--cachedir $cache_dir";
     push @args, "--dist $dist_configs/$dist.conf";
     push @args, "--arch $archpath";

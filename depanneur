@@ -169,6 +169,13 @@ my @build_order = ();  #The build order for all packages
 my $get_order = 0; #Bool :  @build_order is empty
 my $not_export_cf = "/usr/share/depanneur/not-export";
 my @not_export = ();
+my $vmtype = "";
+my $vmmemory = "";
+my $vmdisksize = "";
+my $vmdiskfilesystem = "";
+my $vminitrd = "";
+my $vmkernel = "";
+my $vmswapsize = "";
 
 GetOptions (
     "repository=s" => \@repos,
@@ -215,6 +222,13 @@ GetOptions (
     "clean-repos" => \$clean_repos,
     "baselibs" => \$create_baselibs,
     "skip-srcrpm" => \$skip_srcrpm,
+    "vm-type=s" => \$vmtype,
+    "vm-memory=s" => \$vmmemory,
+    "vm-disk=s" => \$vmdisksize,
+    "vm-diskfilesystem=s" => \$vmdiskfilesystem,
+    "vm-initrd=s" => \$vminitrd,
+    "vm-kernel=s" => \$vmkernel,
+    "vm-swap=s" => \$vmswapsize,
     );
 
 if ( $help ) {
@@ -1099,6 +1113,9 @@ sub expand_deps {
 
     #######################################################################
     my @extradeps = ();
+    if ($vmtype eq "kvm") {
+       push @packdeps, @{$config->{'vminstall'}};
+    }
     my @bdeps = Build::get_build($config, $subpacks, @packdeps, @extradeps);
 
     return @bdeps;
@@ -1746,6 +1763,9 @@ sub build_package {
     my $not_ex;
     if ( $style eq "git" && $incremental == 0 ) {
         $not_ex = grep /^$name$/, @not_export;
+        if ($vmtype eq "kvm") {
+           $not_ex = 0;
+        }
         if ($not_ex) {
             $srpm_filename = $to_build{$name}->{filename};
         } else {
@@ -1812,6 +1832,32 @@ sub build_package {
        }
     }
     my $scratch = "$scratch_dir.$thread";
+    if ($vmtype eq "kvm") {
+        push @args, "--kvm";
+        my $tmpdir_log = "$localrepo/$dist/$arch/logs/$name/";
+        mkdir "$tmpdir_log", 0755;
+        $logpath = "$tmpdir_log/"."$name.log";
+        push @args, "--logfile $logpath";
+    }
+    if ($vmmemory ne "") {
+        push @args, "--vm-memory=$vmmemory";
+    }
+    if ($vmswapsize ne "") {
+        push @args, "--vm-swap-size=$vmswapsize";
+    }
+    if ($vmdisksize ne "") {
+        push @args, "--vm-disk-size=$vmdisksize";
+    }
+    if ($vmdiskfilesystem ne "") {
+        push @args, "--vm-disk-filesystem=$vmdiskfilesystem";
+    }
+    if ($vminitrd ne "") {
+        push @args, "--vm-initrd=$vminitrd";
+    }
+    if ($vmkernel ne "") {
+        push @args, "--vm-kernel=$vmkernel";
+    }
+
     my $redirect = "";
     if ($MAX_THREADS > 1 ) {
         $redirect = "> /dev/null 2>&1";
@@ -1913,13 +1959,25 @@ sub build_package {
 
     if ($ret == 0) {
         # Set the real path of RPMS and SRPMS
-        my $rpmdirpath = `sudo chroot $scratch su -c "rpm --eval %{_rpmdir} 2>/dev/null" - abuild`;
-        my $srcrpmdirpath = `sudo chroot $scratch su -c "rpm --eval %{_srcrpmdir} 2>/dev/null" - abuild`;
+        my $rpmdirpath;
+        my $srcrpmdirpath;
+        # Set the real path of RPMS and SRPMS
+        if ($vmtype eq "kvm") {
+            $rpmdirpath = "/.build.packages/RPMS";
+            $srcrpmdirpath = "/.build.packages/SRPMS";
+        } else {
+            $rpmdirpath = `sudo chroot $scratch su -c "rpm --eval %{_rpmdir} 2>/dev/null" - abuild`;
+            $srcrpmdirpath = `sudo chroot $scratch su -c "rpm --eval %{_srcrpmdir} 2>/dev/null" - abuild`;
+        }
         chomp($rpmdirpath);
         chomp($srcrpmdirpath);
         mkdir_p "$success_logs_path/$name-$version-$release";
-        if (-e "$scratch/.build.log") {
-            my_system ("sudo /bin/mv $scratch/.build.log $success_logs_path/$name-$version-$release/log.txt");
+        if (-e "$logpath") {
+            my_system ("sudo /bin/mv $logpath $success_logs_path/$name-$version-$release/log.txt");
+            if ($vmtype eq "kvm") {
+                my $dir_logpath = dirname($logpath);
+                my_system ("/bin/rm -rf $dir_logpath");
+            }
             $succeeded{"$name"} = "$success_logs_path/$name-$version-$release/log.txt";
         }
         # Detach and terminate
@@ -1950,9 +2008,13 @@ sub build_package {
         return 0;
     } else {
         mkdir_p "$fail_logs_path/$name-$version-$release";
-        if ( -f "$scratch/.build.log" ) {
+        if ( -f "$logpath" ) {
             # move failed log from build root
-            my_system ("sudo /bin/mv $scratch/.build.log $fail_logs_path/$name-$version-$release/log.txt");
+            my_system ("sudo /bin/mv $logpath $fail_logs_path/$name-$version-$release/log.txt");
+            if ($vmtype eq "kvm") {
+                my $dir_logpath = dirname($logpath);
+                my_system ("/bin/rm -rf $dir_logpath");
+            }
             $errors{"$name"} = "$fail_logs_path/$name-$version-$release/log.txt";
             warning("build failed, Leaving the logs in $fail_logs_path/$name-$version-$release/log.txt");
         } else {
@@ -2210,6 +2272,9 @@ if ($style eq 'git') {
 	foreach my $pack (@pre_packs) {
                 my $name = basename($pack->{"project_base_path"});
                 my $r = grep /^$name$/, @not_export;
+                if ($vmtype eq "kvm") {
+                  $r = 0;
+                }
                 if ($r) {
                     info("skip export $name for accel...");
                     push @packs, $pack;

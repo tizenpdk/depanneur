@@ -1827,6 +1827,7 @@ sub build_package {
        }
     }
     my $scratch = "$scratch_dir.$thread";
+    my $logpath= "$scratch/.build.log";
     if ($vmtype eq "kvm") {
         push @args, "--kvm";
         my $tmpdir_log = "$localrepo/$dist/$arch/logs/$name/";

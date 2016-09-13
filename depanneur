@@ -1984,6 +1984,8 @@ sub build_package {
                 if ($skip_srcrpm == 0){
                    my_system ("sudo /bin/mv $scratch/$srcrpmdirpath/*.rpm $srpm_repo_path");
                 }
+            } elsif ($skip_srcrpm == 1){
+                        my_system("/bin/rm -rf $srpm_repo_path/*.rpm");
             }
             if (my @rpms = bsd_glob "$scratch/$rpmdirpath/*/*.rpm") {
                 #remove old rpms in local repo

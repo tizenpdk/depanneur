@@ -2561,11 +2561,11 @@ while (! $TERM) {
                 if ($add == 1 ) {
                     push(@order, $name);
 		    last;
-                } else {
+		}
+              } else {
 		push(@order_clean, $name);
 		}
-            }
-        }
+          }
 
 	#remove unuseful package name from  build_order
 	foreach my $u_name (@order_clean) {

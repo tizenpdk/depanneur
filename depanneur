@@ -1837,7 +1837,7 @@ sub build_package {
         push @args, "--kvm";
         my $tmpdir_log = "$localrepo/$dist/$arch/logs/$name/";
         mkdir "$tmpdir_log", 0755;
-        $logpath = "$tmpdir_log/"."$name.log";
+        $logpath = "$tmpdir_log/.build.log";
         push @args, "--logfile $logpath";
     }
     if ($vmmemory ne "") {

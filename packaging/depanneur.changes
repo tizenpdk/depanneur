@@ -1,3 +1,12 @@
+* Wed Sep 21 2016 Zhang Yang <y0169.zhang@samsung.com> 0.15.2
+- Add --use-higher-deps option, it means which repo provides higher version
+  deps, then use it.
+- Enable kvm build function.
+- Add config to make some packages not export sources for accel.
+- Export source code by gbs use threads.
+- Improve build order for multiple building.
+- Reduce copy files times for rpm packages,using 'mv' command instead.
+
 * Fri Mar 4 2016 Zhang Yang <y0169.zhang@samsung.com> 0.15
 - add --fail-fast option of gbs
 - fix CentOS 7 require

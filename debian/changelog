@@ -1,3 +1,9 @@
+depanneur (0.15.2) unstable; urgency=high
+
+  * Add --use-higher-deps option, which repo provides higher version deps, use it
+
+ -- SoonKyu Park <sk7.park@samsung.com> Wed, 28 Sep 2016 09:30:00 +0800
+
 depanneur (0.15.1) unstable; urgency=high
 
   * adapt to new build

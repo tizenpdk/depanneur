@@ -1,3 +1,6 @@
+* Wed Sep 28 2016 SoonKyu Park <sk7.park@samsung.com> 0.15.2
+- Add --use-higher-deps option, which repo provides higher version deps, use it
+
 * Thu May 26 2016 Zhang Yang <y0169.zhang@samsung.com> 0.15.1
 - adapt to new build
 

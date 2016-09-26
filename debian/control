@@ -9,7 +9,7 @@ Homepage: http://www.tizen.org
 Package: depanneur
 Architecture: all
 Depends: ${perl:Depends},
- build (>= 2013.11.12-tizen20140612),
+ build (>= 20150115-tizen20160928),
  libyaml-perl,
  createrepo (>= 0.9.8),
  libjson-perl,

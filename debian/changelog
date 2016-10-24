@@ -1,3 +1,9 @@
+depanneur (0.15.3) unstable; urgency=high
+
+  * Adapt to  Ubuntu 16.10.
+
+ -- Zhang Yang <y0169.zhang@samsung.com> Wed, 28 Sep 2016 10:30:00 +0800
+
 depanneur (0.15.2) unstable; urgency=high
 
   * Add --use-higher-deps option, it means which repo provides higher version

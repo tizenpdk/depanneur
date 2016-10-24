@@ -1,3 +1,6 @@
+* Wed Sep 28 2016 Zhang Yang <y0169.zhang@samsung.com> 0.15.3
+- Adapt to Ubuntu 16.10
+
 * Wed Sep 21 2016 Zhang Yang <y0169.zhang@samsung.com> 0.15.2
 - Add --use-higher-deps option, it means which repo provides higher version
   deps, then use it.

@@ -951,7 +951,8 @@ sub refresh_repo {
     # %fn name => package.rpm
     # %prov name => provides
     # %req  name => requires
-    my (%fn, %prov, %req);
+    # %rec  name => recommends
+    my (%fn, %prov, %req, %rec);
     my %exportfilters = %{$config->{'exportfilter'}};
     my %packs;
     # package id
@@ -965,8 +966,9 @@ sub refresh_repo {
     # F:acl.i586-1373460453/1373460459/0: http://.../packages/i586/acl-2.2.49-2.1.i586.rpm
     # P:acl.i586-1373460453/1373460459/0: acl = 2.2.49-2.1 acl(x86-32) = 2.2.49-2.1
     # R:acl.i586-1373460453/1373460459/0: libattr.so.1 libacl.so.1 libc.so.6(GLIBC_2.1)
+    # r:acl.i586-1373460453/1373460459/0: libattr.so.1
     # I:acl.i586-1373460453/1373460459/0: acl-2.2.49-2.1 1373460453
-    my ($pkgF, $pkgP, $pkgR);
+    my ($pkgF, $pkgP, $pkgR, $pkgr);
     while(<$fh>) {
       chomp;
       if (/^F:(.*?)-\d+\/\d+\/\d+: (.*)$/) {
@@ -999,6 +1001,11 @@ sub refresh_repo {
         $pkgR = $2;
         next if $req{$1};
         $req{$1} = $2;
+      } elsif (/^r:(.*?)-\d+\/\d+\/\d+: (.*)$/) {
+        # get package name and its recommends
+        $pkgr = $2;
+        next if $rec{$1};
+        $rec{$1} = $2;
       } elsif (/^I:(.*?)-\d+\/\d+\/\d+: (.*)$/) {
         my $r = 0;
         if ($use_higher_deps == 1) {
@@ -1044,7 +1051,7 @@ sub refresh_repo {
     #get provides list and requres list of every packages
     for my $pack (keys %packs) {
       my $r = {};
-      my (@s, $s, @pr, @re);
+      my (@s, $s, @pr, @re, @rec);
       @s = split(' ', $prov{$packs{$pack}} || '');
       while (@s) {
         $s = shift @s;
@@ -1067,8 +1074,20 @@ sub refresh_repo {
         push @re, $s;
         splice(@s, 0, 2) if @s && $s[0] =~ /^[<=>]/;
       }
+      @s = split(' ', $rec{$packs{$pack}} || '');
+      while (@s) {
+	$s = shift @s;
+	next if !$dofileprovides && $s =~ /^\//;
+	if ($s =~ /^rpmlib\(/) {
+	  splice(@s, 0, 2);
+	  next;
+	}
+	push @rec, $s;
+	splice(@s, 0, 2) if @s && $s[0] =~ /^[<=>]/;
+      }
       $r->{'provides'} = \@pr;
       $r->{'requires'} = \@re;
+      $r->{'recommends'} = \@rec;
       $repo{$pack} = $r;
     }
 

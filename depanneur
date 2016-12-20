@@ -1919,6 +1919,10 @@ sub build_package {
         if ( -d "$builddir") {
             my_system("rm -rf $builddir");
         }
+        my $otherdir = "$scratch/home/abuild/rpmbuild/OTHER/";
+        if ( ! -d "$otherdir") {
+            my_system("sudo /bin/mkdir -p $otherdir");
+        }
         my $project_base_path = $to_build{$name}->{project_base_path};
         my_system("sudo /bin/mkdir -p $builddir");
         my $mount = "sudo /bin/mount -o bind $project_base_path $builddir";

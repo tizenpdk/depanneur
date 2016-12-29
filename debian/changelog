@@ -1,8 +1,14 @@
 depanneur (0.15.3) unstable; urgency=high
 
-  * Adapt to  Ubuntu 16.10.
+  * Enable kvm build function.
+  * Add config to make some packages not export sources for accel.
+  * Export source code by gbs use threads.
+  * Improve build order for multiple building.
+  * Reduce copy files times for rpm packages,using 'mv' command instead.
+  * Add openSUSE 42.1 check action for build-initvm-i586
+  * Fix lack of OTHER directory cause rpmlint error
 
- -- Zhang Yang <y0169.zhang@samsung.com> Wed, 28 Sep 2016 10:30:00 +0800
+ -- SoonKyu Park <sk7.park@samsung.com> Sat, 31 Dec 2016 19:30:00 +0800
 
 depanneur (0.15.2) unstable; urgency=high
 

@@ -1,5 +1,11 @@
-* Wed Sep 28 2016 Zhang Yang <y0169.zhang@samsung.com> 0.15.3
-- Adapt to Ubuntu 16.10
+* Sat Dec 31 2016 SoonKyu Park <sk7.park@samsung.com> 0.15.3
+- Enable kvm build function.
+- Add config to make some packages not export sources for accel.
+- Export source code by gbs use threads.
+- Improve build order for multiple building.
+- Reduce copy files times for rpm packages,using 'mv' command instead.
+- Add openSUSE 42.1 check action for build-initvm-i586
+- Fix lack of OTHER directory cause rpmlint error
 
 * Wed Sep 21 2016 Zhang Yang <y0169.zhang@samsung.com> 0.15.2
 - Add --use-higher-deps option, it means which repo provides higher version

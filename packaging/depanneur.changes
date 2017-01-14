@@ -1,3 +1,6 @@
+* Sat Jan 14 2017 SoonKyu Park <sk7.park@samsung.com> 0.15.4
+- Support 'Recommands:' inside spec file
+
 * Sat Dec 31 2016 SoonKyu Park <sk7.park@samsung.com> 0.15.3
 - Enable kvm build function.
 - Add config to make some packages not export sources for accel.

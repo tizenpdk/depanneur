@@ -1,3 +1,9 @@
+depanneur (0.15.4) unstable; urgency=high
+
+  * Support 'Recommands:' inside spec file
+
+ -- SoonKyu Park <sk7.park@samsung.com> Sat, 14 Jan 2017 19:30:00 +0800
+
 depanneur (0.15.3) unstable; urgency=high
 
   * Adapt to  Ubuntu 16.10.

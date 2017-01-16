@@ -1,3 +1,6 @@
+* Sat Jan 14 2017 SoonKyu Park <sk7.park@samsung.com> 0.15.4
+- Support 'Recommands:' inside spec file
+
 * Wed Sep 28 2016 Zhang Yang <y0169.zhang@samsung.com> 0.15.3
 - Adapt to Ubuntu 16.10
 

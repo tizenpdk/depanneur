@@ -8,26 +8,26 @@ depanneur (0.15.3) unstable; urgency=high
   * Add openSUSE 42.1 check action for build-initvm-i586
   * Fix lack of OTHER directory cause rpmlint error
 
- -- SoonKyu Park <sk7.park@samsung.com> Sat, 31 Dec 2016 19:30:00 +0800
+ -- SoonKyu Park <sk7.park@samsung.com>  Sat, 31 Dec 2016 19:30:00 +0800
 
 depanneur (0.15.2) unstable; urgency=high
 
   * Add --use-higher-deps option, which repo provides higher version deps, use it
 
- -- SoonKyu Park <sk7.park@samsung.com> Wed, 28 Sep 2016 09:30:00 +0800
+ -- SoonKyu Park <sk7.park@samsung.com>  Wed, 28 Sep 2016 09:30:00 +0800
 
 depanneur (0.15.1) unstable; urgency=high
 
   * adapt to new build
 
- -- Zhang Yang <y0169.zhang@samsung.com> Thu, 26 May 2016 09:30:00 +0800
+ -- Zhang Yang <y0169.zhang@samsung.com>  Thu, 26 May 2016 09:30:00 +0800
 
 depanneur (0.15) unstable; urgency=high
 
   * add --faild-fast option of gbs
   * fix CentOS 7 require
 
- -- Zhang Yang <y0169.zhang@samsung.com> Fri, 4 Mar 2016 15:10:45 +0800
+ -- Zhang Yang <y0169.zhang@samsung.com>  Fri, 4 Mar 2016 15:10:45 +0800
 
 depanneur (0.14) unstable; urgency=high
 
@@ -40,7 +40,7 @@ depanneur (0.14) unstable; urgency=high
   * add rpm changelog
   * add comments for core builder code
 
- -- Li Jinjing <jinjingx.li@intel.com> Wed, 15 Oct 2014 10:56:15 +0800
+ -- Li Jinjing <jinjingx.li@intel.com>  Wed, 15 Oct 2014 10:56:15 +0800
 
 depanneur (0.13.1) unstable; urgency=high
 

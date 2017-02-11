@@ -2014,7 +2014,7 @@ sub build_package {
                 update_repo_with_rpms(\%srpmpaths, @srpms);
                 if ($skip_srcrpm == 0){
                    foreach (@srpms) {
-                       my_system ("ln -f $_ $srpm_repo_path");
+                       my_system ("sudo ln $_ $srpm_repo_path");
                    }
                 }
             } elsif ($skip_srcrpm == 1){
@@ -2025,7 +2025,7 @@ sub build_package {
                 #copy the new ones to local repo
                 update_repo_with_rpms (\%rpmpaths, @rpms);
                 foreach (@rpms) {
-                    my_system ("ln -f $_ $rpm_repo_path");
+                    my_system ("sudo ln $_ $rpm_repo_path");
                 }
             }
 

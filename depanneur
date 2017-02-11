@@ -2013,7 +2013,9 @@ sub build_package {
                 #copy the new ones to local repo
                 update_repo_with_rpms(\%srpmpaths, @srpms);
                 if ($skip_srcrpm == 0){
-                   my_system ("sudo /bin/mv $scratch/$srcrpmdirpath/*.rpm $srpm_repo_path");
+                   foreach (@srpms) {
+                       my_system ("ln -f $_ $srpm_repo_path");
+                   }
                 }
             } elsif ($skip_srcrpm == 1){
                         my_system("/bin/rm -rf $srpm_repo_path/*.rpm");
@@ -2022,7 +2024,9 @@ sub build_package {
                 #remove old rpms in local repo
                 #copy the new ones to local repo
                 update_repo_with_rpms (\%rpmpaths, @rpms);
-                my_system ("sudo /bin/mv  $scratch/$rpmdirpath/*/*.rpm $rpm_repo_path");
+                foreach (@rpms) {
+                    my_system ("ln -f $_ $rpm_repo_path");
+                }
             }
 
             my_system("$build_dir/createdirdeps $rpm_repo_path > $order_dir/.repo.cache.local ");

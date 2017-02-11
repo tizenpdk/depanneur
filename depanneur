@@ -131,6 +131,7 @@ my $icecream = 0;       # use icecream to specify the number of parallel process
 my $noinit = 0;         # don't check build root, just go into it and building
 my $keep_packs = 0;     # don't remove useless rpm packages from build root
 my $use_higher_deps = 0; # which repo provides higher version deps, use it
+my $not_export_source = 0; # do not export source
 my @defines;            # define extra macros for 'rpmbuild'
 my $arg_spec = "";      # spec file to be built this time
 my $start_time = "";    # build start time
@@ -215,6 +216,7 @@ GetOptions (
     "noinit" => \$noinit,
     "keep-packs" => \$keep_packs,
     "use-higher-deps" => \$use_higher_deps,
+    "not-export-source" => \$not_export_source,
     "define=s" => \@defines,
     "spec=s" => \$arg_spec,
     "clean-repos" => \$clean_repos,
@@ -1774,14 +1776,18 @@ sub build_package {
     my $spec_name = basename($to_build{$name}->{filename});
     my $pkg_path = "$build_root/local/sources/$dist/$name-$version-$release";
     my $srpm_filename = "";
-    my $not_ex;
+    my $not_ex = 0;
     if ( $style eq "git" && $incremental == 0 ) {
-        $not_ex = grep /^$name$/, @not_export;
-        if ($vmtype eq "kvm") {
-          $not_ex = 0;
-        }
-        if ($not_ex) {
-            $srpm_filename = $to_build{$name}->{filename};
+        if ($not_export_source == 1) {
+            $not_ex = grep /^$name$/, @not_export;
+            if ($vmtype eq "kvm") {
+              $not_ex = 0;
+            }
+            if ($not_ex) {
+                $srpm_filename = $to_build{$name}->{filename};
+            } else {
+                $srpm_filename = "$pkg_path/$spec_name";
+            }
         } else {
             $srpm_filename = "$pkg_path/$spec_name";
         }
@@ -2296,14 +2302,19 @@ if ($style eq 'git') {
 	my $packs_queue = Thread::Queue->new();
 	my $data_queue = Thread::Queue->new();
 	foreach my $pack (@pre_packs) {
-                my $name = basename($pack->{"project_base_path"});
-                my $r = grep /^$name$/, @not_export;
-                if ($vmtype eq "kvm") {
-                  $r = 0;
-                }
-                if ($r) {
-                    info("skip export $name for accel...");
-                    push @packs, $pack;
+                if ($not_export_source == 1) {
+                    my $name = basename($pack->{"project_base_path"});
+                    my $r = grep /^$name$/, @not_export;
+                    if ($vmtype eq "kvm") {
+                      $r = 0;
+                    }
+                    if ($r) {
+                        info("skip export $name for accel...");
+                        push @packs, $pack;
+                    } else {
+                        info("package $name not support skip export source");
+                        $data_queue->enqueue($pack);
+                    }
                 } else {
                     $data_queue->enqueue($pack);
                 }

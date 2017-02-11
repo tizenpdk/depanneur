@@ -6,10 +6,10 @@ ALL     ALL=(ALL) NOPASSWD: /usr/bin/build
 ALL     ALL=(ALL) NOPASSWD: /bin/cp *.conf */scratch.*/*.conf
 ALL     ALL=(ALL) NOPASSWD: /bin/rm -f */.build.log
 ALL     ALL=(ALL) NOPASSWD: /bin/mv  */.build.log */log.txt
-ALL     ALL=(ALL) NOPASSWD: /bin/mv  */*.rpm */*RPMS
 ALL     ALL=(ALL) NOPASSWD: /bin/echo -n
 ALL     ALL=(ALL) NOPASSWD: /usr/sbin/chroot */scratch.*
 ALL     ALL=(ALL) NOPASSWD: /usr/bin/chroot */scratch.*
+ALL     ALL=(ALL) NOPASSWD: /usr/bin/ln */*.rpm */local/repos/*
 
 Defaults env_keep += "http_proxy"
 Defaults env_keep += "no_proxy"

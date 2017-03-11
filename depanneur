@@ -30,6 +30,7 @@ use POSIX ":sys_wait_h";
 use File::Glob ':glob';
 use User::pwent qw(getpw);
 use POSIX qw(sysconf);
+use Config::Tiny;
 
 
 # Global vars
@@ -607,10 +608,25 @@ sub fill_packs_from_git {
     }
 
     debug("working on $base");
+    my $l_packaging_dir = $packaging_dir;
+    my $l_upstream_branch = $upstream_branch;
+    my $l_upstream_tag = $upstream_tag;
+    if (-e "$base/.gbs.conf") {
+        debug("use $base own gbs.conf");
+        my $cfg_tiny = Config::Tiny->new;
+        $cfg_tiny = Config::Tiny->read("$base/.gbs.conf");
+        my $v = $cfg_tiny->{general}->{packaging_dir};
+        $l_packaging_dir = $v if (defined($v));
+        $v  = $cfg_tiny->{general}->{upstream_branch};
+        $l_upstream_branch = $v if (defined($v));
+        $v = $cfg_tiny->{general}->{upstream_tag};
+        $l_upstream_tag = $v if (defined($v));
+    }
+
     if ($includeall == 0 || $spec_commit ne "") {
         my (undef, $tmp_file) = tempfile(OPEN => 0);
         my $__commit = $spec_commit eq "" ? $commit : $spec_commit;
-        if (my_system("cd $base; git show $__commit:$packaging_dir >$tmp_file 2>/dev/null") == 0) {
+        if (my_system("cd $base; git show $__commit:$l_packaging_dir >$tmp_file 2>/dev/null") == 0) {
             open my $file, '<', $tmp_file or die $!;
             # the content like:
             # tree $__commit:$packaging_dir
@@ -626,8 +642,11 @@ sub fill_packs_from_git {
                     next if $_ !~ /\.spec$/;
                     # if build specify --spec
                     next if $arg_spec ne "" && $_ ne $arg_spec;
-                    push(@pre_packs, {filename => "$base/$packaging_dir/$_",
-                                      project_base_path => $base});
+                    push(@pre_packs, {filename => "$base/$l_packaging_dir/$_",
+                                      project_base_path => $base,
+                                      packaging_dir => $l_packaging_dir,
+                                      upstream_branch => $l_upstream_branch,
+                                      upstream_tag => $l_upstream_tag});
                 }
             } else {        #packaging_dir is a symbol link
                 my (undef, $tmp_symlink_file) = tempfile(OPEN => 0);
@@ -639,7 +658,10 @@ sub fill_packs_from_git {
                         next if $_ !~ /\.spec$/;
                         next if $arg_spec ne "" && $_ ne $arg_spec;
                         push(@pre_packs, {filename => "$base/$first_line/$_",
-                                          project_base_path => $base});
+                                          project_base_path => $base,
+                                          packaging_dir => $l_packaging_dir,
+                                          upstream_branch => $l_upstream_branch,
+                                          upstream_tag => $l_upstream_tag});
                     }
                     close($symlink_file);
                     unlink $tmp_symlink_file;
@@ -650,12 +672,15 @@ sub fill_packs_from_git {
         }
     } else {
         # specify --include-all use current packaging dir not from git
-        my $pattern = "$base/$packaging_dir/*.spec";
-        $pattern = "$base/$packaging_dir/$arg_spec" if $arg_spec ne "";
+        my $pattern = "$base/$l_packaging_dir/*.spec";
+        $pattern = "$base/$l_packaging_dir/$arg_spec" if $arg_spec ne "";
         my @spec_list = glob($pattern);
         foreach my $spec (@spec_list) {
                 push(@pre_packs, {filename => "$spec",
-                                  project_base_path => $base});
+                                  project_base_path => $base,
+                                  packaging_dir => $l_packaging_dir,
+                                  upstream_branch => $l_upstream_branch,
+                                  upstream_tag => $l_upstream_tag});
         }
     }
 }
@@ -664,7 +689,7 @@ sub fill_packs_from_git {
 # Call gbs export
 #---------------------------------------------------------------------
 sub gbs_export {
-    my ($base, $spec) = @_;
+    my ($base, $spec, $packaging_dir, $upstream_branch, $upstream_tag) = @_;
     my @args = ();
     my $cmd;
     push @args, "gbs";
@@ -733,9 +758,9 @@ sub read_cache {
 # No return value
 #---------------------------------------------------------------------
 sub write_cache {
-    my ($cache_key, $cache_val, $base, $spec) = @_;
+    my ($cache_key, $cache_val, $base, $spec, $packaging_dir, $upstream_branch, $upstream_tag) = @_;
     my $cache_fname = "$cache_path/$cache_key";
-    my @export_out = gbs_export($base, $spec);
+    my @export_out = gbs_export($base, $spec, $packaging_dir, $upstream_branch, $upstream_tag);
 
     if (shift @export_out) {
         # if export failed, collect export error to report
@@ -794,6 +819,9 @@ sub prepare_git {
     my $config = shift;
     my $base = shift;
     my $spec = shift;
+    my $packaging_dir = shift;
+    my $upstream_branch = shift;
+    my $upstream_tag = shift;
     my $packs_queue = shift;
     my $spec_file = basename($spec);
 
@@ -851,7 +879,7 @@ sub prepare_git {
 
         } else {
             # if it's failed to write cache
-            unless (write_cache($cache_key, $val, $base, $spec_file)) {
+            unless (write_cache($cache_key, $val, $base, $spec_file, $packaging_dir, $upstream_branch, $upstream_tag)) {
                 clean_cache($cache_key);
                 debug("$pkg_name was not exported correctly");
                 return;
@@ -2329,7 +2357,8 @@ if ($style eq 'git') {
 		$data_queue->enqueue(undef);
 		threads->create(sub {
 			while (my $pack = $data_queue->dequeue()) {
-				prepare_git($config, $pack->{"project_base_path"}, $pack->{"filename"}, $packs_queue);
+				prepare_git($config, $pack->{"project_base_path"}, $pack->{"filename"},
+                    $pack->{"packaging_dir"}, $pack->{"upstream_branch"}, $pack->{"upstream_tag"}, $packs_queue);
 			}
 		});
 	}

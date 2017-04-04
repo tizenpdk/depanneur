@@ -1,8 +1,15 @@
+depanneur (0.15.5) unstable; urgency=high
+
+  * Fix not to input sudo password at the end of gbs build
+  * Fix debchange warning
+
+ -- SoonKyu Park <sk7.park@samsung.com>  Wed, 5 Apr 2017 17:00:00 +0900
+
 depanneur (0.15.4) unstable; urgency=high
 
   * Support 'Recommands:' inside spec file
 
- -- SoonKyu Park <sk7.park@samsung.com> Sat, 14 Jan 2017 19:30:00 +0800
+ -- SoonKyu Park <sk7.park@samsung.com>  Sat, 14 Jan 2017 19:30:00 +0800
 
 depanneur (0.15.3) unstable; urgency=high
 

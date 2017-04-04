@@ -130,8 +130,8 @@ my $ccache = 0;         # use ccache to speed up building
 my $icecream = 0;       # use icecream to specify the number of parallel processes
 my $noinit = 0;         # don't check build root, just go into it and building
 my $keep_packs = 0;     # don't remove useless rpm packages from build root
-my $thread_export = 0;  # use thread when gbs export source code
 my $use_higher_deps = 0; # which repo provides higher version deps, use it
+my $not_export_source = 0; # do not export source
 my @defines;            # define extra macros for 'rpmbuild'
 my $arg_spec = "";      # spec file to be built this time
 my $start_time = "";    # build start time
@@ -215,8 +215,8 @@ GetOptions (
     "icecream=s" => \$icecream,
     "noinit" => \$noinit,
     "keep-packs" => \$keep_packs,
-    "thread-export" => \$thread_export,
     "use-higher-deps" => \$use_higher_deps,
+    "not-export-source" => \$not_export_source,
     "define=s" => \@defines,
     "spec=s" => \$arg_spec,
     "clean-repos" => \$clean_repos,
@@ -860,7 +860,7 @@ sub prepare_git {
     # check whether it's really successful to export
     if ( -e "$pkg_path/$cache_key/$spec_file" ){
         # prepare to build the packages had been exported
-        $packs_queue->enqueue({
+	$packs_queue->enqueue({
             filename => "$pkg_path/$cache_key/$spec_file",
             project_base_path => $base,
         });
@@ -957,7 +957,8 @@ sub refresh_repo {
     # %fn name => package.rpm
     # %prov name => provides
     # %req  name => requires
-    my (%fn, %prov, %req);
+    # %rec  name => recommends
+    my (%fn, %prov, %req, %rec);
     my %exportfilters = %{$config->{'exportfilter'}};
     my %packs;
     # package id
@@ -971,8 +972,9 @@ sub refresh_repo {
     # F:acl.i586-1373460453/1373460459/0: http://.../packages/i586/acl-2.2.49-2.1.i586.rpm
     # P:acl.i586-1373460453/1373460459/0: acl = 2.2.49-2.1 acl(x86-32) = 2.2.49-2.1
     # R:acl.i586-1373460453/1373460459/0: libattr.so.1 libacl.so.1 libc.so.6(GLIBC_2.1)
+    # r:acl.i586-1373460453/1373460459/0: libattr.so.1
     # I:acl.i586-1373460453/1373460459/0: acl-2.2.49-2.1 1373460453
-    my ($pkgF, $pkgP, $pkgR);
+    my ($pkgF, $pkgP, $pkgR, $pkgr);
     while(<$fh>) {
       chomp;
       if (/^F:(.*?)-\d+\/\d+\/\d+: (.*)$/) {
@@ -1005,6 +1007,11 @@ sub refresh_repo {
         $pkgR = $2;
         next if $req{$1};
         $req{$1} = $2;
+      } elsif (/^r:(.*?)-\d+\/\d+\/\d+: (.*)$/) {
+        # get package name and its recommends
+        $pkgr = $2;
+        next if $rec{$1};
+        $rec{$1} = $2;
       } elsif (/^I:(.*?)-\d+\/\d+\/\d+: (.*)$/) {
         my $r = 0;
         if ($use_higher_deps == 1) {
@@ -1050,7 +1057,7 @@ sub refresh_repo {
     #get provides list and requres list of every packages
     for my $pack (keys %packs) {
       my $r = {};
-      my (@s, $s, @pr, @re);
+      my (@s, $s, @pr, @re, @rec);
       @s = split(' ', $prov{$packs{$pack}} || '');
       while (@s) {
         $s = shift @s;
@@ -1073,8 +1080,20 @@ sub refresh_repo {
         push @re, $s;
         splice(@s, 0, 2) if @s && $s[0] =~ /^[<=>]/;
       }
+      @s = split(' ', $rec{$packs{$pack}} || '');
+      while (@s) {
+	$s = shift @s;
+	next if !$dofileprovides && $s =~ /^\//;
+	if ($s =~ /^rpmlib\(/) {
+	  splice(@s, 0, 2);
+	  next;
+	}
+	push @rec, $s;
+	splice(@s, 0, 2) if @s && $s[0] =~ /^[<=>]/;
+      }
       $r->{'provides'} = \@pr;
       $r->{'requires'} = \@re;
+      $r->{'recommends'} = \@rec;
       $repo{$pack} = $r;
     }
 
@@ -1760,14 +1779,18 @@ sub build_package {
     my $spec_name = basename($to_build{$name}->{filename});
     my $pkg_path = "$build_root/local/sources/$dist/$name-$version-$release";
     my $srpm_filename = "";
-    my $not_ex;
+    my $not_ex = 0;
     if ( $style eq "git" && $incremental == 0 ) {
-        $not_ex = grep /^$name$/, @not_export;
-        if ($vmtype eq "kvm") {
-           $not_ex = 0;
-        }
-        if ($not_ex) {
-            $srpm_filename = $to_build{$name}->{filename};
+        if ($not_export_source == 1) {
+            $not_ex = grep /^$name$/, @not_export;
+            if ($vmtype eq "kvm") {
+               $not_ex = 0;
+            }
+            if ($not_ex) {
+                $srpm_filename = $to_build{$name}->{filename};
+            } else {
+                $srpm_filename = "$pkg_path/$spec_name";
+            }
         } else {
             $srpm_filename = "$pkg_path/$spec_name";
         }
@@ -1994,7 +2017,9 @@ sub build_package {
                 #copy the new ones to local repo
                 update_repo_with_rpms(\%srpmpaths, @srpms);
                 if ($skip_srcrpm == 0){
-                   my_system ("sudo /bin/mv $scratch/$srcrpmdirpath/*.rpm $srpm_repo_path");
+                   foreach (@srpms) {
+                       my_system ("sudo ln $_ $srpm_repo_path");
+                   }
                 }
             } elsif ($skip_srcrpm == 1){
                         my_system("/bin/rm -rf $srpm_repo_path/*.rpm");
@@ -2003,7 +2028,9 @@ sub build_package {
                 #remove old rpms in local repo
                 #copy the new ones to local repo
                 update_repo_with_rpms (\%rpmpaths, @rpms);
-                my_system ("sudo /bin/mv  $scratch/$rpmdirpath/*/*.rpm $rpm_repo_path");
+                foreach (@rpms) {
+                    my_system ("sudo ln $_ $rpm_repo_path");
+                }
             }
 
             my_system("$build_dir/createdirdeps $rpm_repo_path > $order_dir/.repo.cache.local ");
@@ -2277,14 +2304,19 @@ if ($style eq 'git') {
 	my $packs_queue = Thread::Queue->new();
 	my $data_queue = Thread::Queue->new();
 	foreach my $pack (@pre_packs) {
-                my $name = basename($pack->{"project_base_path"});
-                my $r = grep /^$name$/, @not_export;
-                if ($vmtype eq "kvm") {
-                  $r = 0;
-                }
-                if ($r) {
-                    info("skip export $name for accel...");
-                    push @packs, $pack;
+                if ($not_export_source == 1) {
+                    my $name = basename($pack->{"project_base_path"});
+                    my $r = grep /^$name$/, @not_export;
+                    if ($vmtype eq "kvm") {
+                      $r = 0;
+                    }
+                    if ($r) {
+                        info("skip export $name for accel...");
+                        push @packs, $pack;
+                    } else {
+                        info("package $name not support skip export source");
+                        $data_queue->enqueue($pack);
+                    }
                 } else {
                     $data_queue->enqueue($pack);
                 }
@@ -2320,7 +2352,6 @@ if ($style eq 'git') {
         File::Find::find({wanted => \&obs_wanted}, $package_path );
     }
 }
-
 if ($clean_repos && -e "$localrepo/$dist/$arch") {
     info("cleaning up local repo: $rpm_repo_path ...");
     my_system("rm -rf $rpm_repo_path/*");

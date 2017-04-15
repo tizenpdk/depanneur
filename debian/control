@@ -9,11 +9,11 @@ Homepage: http://www.tizen.org
 Package: depanneur
 Architecture: all
 Depends: ${perl:Depends},
- build (>= 20150115-tizen20170405),
+ build (>= 20150115-tizen20170428),
  libyaml-perl,
  createrepo (>= 0.9.8),
  libjson-perl,
- libconfig-tiny-perl
+ libconfig-tiny-perl,
  libhtml-template-perl
 Description: Manages and executes the builds using the obs-build script.
   The depanneur tool goes through local Git trees and evaluates packaging

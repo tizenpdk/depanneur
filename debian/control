@@ -13,6 +13,7 @@ Depends: ${perl:Depends},
  libyaml-perl,
  createrepo (>= 0.9.8),
  libjson-perl,
+ libconfig-tiny-perl,
  libhtml-template-perl
 Description: Manages and executes the builds using the obs-build script.
   The depanneur tool goes through local Git trees and evaluates packaging

@@ -10,6 +10,7 @@ Requires:       createrepo >= 0.9.8
 Requires:       perl(YAML)
 Requires:       perl(JSON)
 Requires:       perl(HTML::Template)
+Requires:       perl(Config::Tiny)
 Requires:       tizen-build >= 20170405
 %if 0%{?centos_ver} == 7 || 0%{?suse_version} == 1315
 

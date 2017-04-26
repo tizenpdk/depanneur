@@ -12,11 +12,6 @@ Requires:       perl(JSON)
 Requires:       perl(HTML::Template)
 Requires:       tizen-build >= 20161231
 Requires:       perl(Config::Tiny)
-%if 0%{?centos_ver} == 7 || 0%{?suse_version} == 1315
-
-%else
-Requires:       tizen-build-initvm-i586 >= 20161231
-%endif
 %ifarch         x86_64
 Requires:       tizen-build-initvm-x86_64 >= 20161231
 %endif

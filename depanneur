@@ -2355,7 +2355,7 @@ if ($style eq 'git') {
 		threads->create(sub {
 			while (my $pack = $data_queue->dequeue()) {
 					prepare_git($config, $pack->{"project_base_path"}, $pack->{"filename"},
-							+                    $pack->{"packaging_dir"}, $pack->{"upstream_branch"}, $pack->{"upstream_tag"}, $packs_queue);
+                    $pack->{"packaging_dir"}, $pack->{"upstream_branch"}, $pack->{"upstream_tag"}, $packs_queue);
 			}
 		});
 	}

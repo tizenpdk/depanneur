@@ -1681,8 +1681,12 @@ sub worker_thread {
         if ($status == 0) {
             $dirty = 1;
         }
-
         if ($fail_fast && $status == 1) {
+            info("build failed, exit...");
+            $TERM = 1;
+        }
+
+        if ($keepgoing eq "off" && $status == 1) {
             info("build failed, exit...");
             $TERM = 1;
         }

@@ -44,6 +44,10 @@ my $DETACHING:shared;
 # Flag to inform main thread update pkgdeps
 my $dirty:shared=0;
 
+my %export_packs:shared = ();
+my $export_lock:shared;
+my $SINGLE_SPEC = 1;
+my $MULTI_SPEC = 2;
 # Set the variable $File::Find::dont_use_nlink if you're using AFS,
 # since AFS cheats.
 
@@ -760,8 +764,17 @@ sub read_cache {
 sub write_cache {
     my ($cache_key, $cache_val, $base, $spec, $packaging_dir, $upstream_branch, $upstream_tag) = @_;
     my $cache_fname = "$cache_path/$cache_key";
-    my @export_out = gbs_export($base, $spec, $packaging_dir, $upstream_branch, $upstream_tag);
-
+    my @export_out;
+    my $n = $export_packs{$base};
+    if ($n ne $SINGLE_SPEC) {
+        info("multi spec export in order:$base\t$spec");
+        {
+            lock($export_lock);
+            @export_out = gbs_export($base, $spec, $packaging_dir, $upstream_branch, $upstream_tag);
+        }
+    } else {
+            @export_out = gbs_export($base, $spec, $packaging_dir, $upstream_branch, $upstream_tag);
+    }
     if (shift @export_out) {
         # if export failed, collect export error to report
         push(@export_errors, {package_name => $cache_key,
@@ -2351,9 +2364,21 @@ if ($style eq 'git') {
                     } else {
                         info("package $name not support skip export source");
                         $data_queue->enqueue($pack);
+                        my $lock_name = $pack->{"project_base_path"};
+                        if (exists $export_packs{$lock_name}) {
+                            $export_packs{$lock_name} = $MULTI_SPEC;
+                        } else {
+                            $export_packs{$lock_name} = $SINGLE_SPEC;
+                        }
                     }
                 } else {
                     $data_queue->enqueue($pack);
+                    my $lock_name = $pack->{"project_base_path"};
+                    if (exists $export_packs{$lock_name}) {
+                        $export_packs{$lock_name} = $MULTI_SPEC;
+                    } else {
+                        $export_packs{$lock_name} = $SINGLE_SPEC;
+                    }
                 }
 	}
 

@@ -1,3 +1,9 @@
+* Fri Jun 30 2017 Zhang Yang <y0169.zhang@samsung.com> 0.15.7
+- Upgrade to 0.15.7
+
+* Fri Apr 28 2017 Wang Jun <junbill.wang@samsung.com> 0.15.6
+- Upgrade to 0.15.6
+
 * Wed Apr 05 2017 SoonKyu Park <sk7.park@samsung.com> 0.15.5
 - Fix not to input sudo password at the end of gbs build
 - Fix debchange warning

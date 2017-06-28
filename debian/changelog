@@ -1,3 +1,15 @@
+depanneur (0.15.7) unstable; urgency=high
+
+  *Upgrade to 0.15.7
+
+ -- Zhang Yang <y0169.zhang@samsung.com>  Fri, 30 Jun 2017 12:00:00 +0800
+
+depanneur (0.15.6) unstable; urgency=high
+
+  *Upgrade to 0.15.6
+
+ -- Wang Jun <junbill.wang@samsung.com>  Fri, 28 Apr 2017 12:00:00 +0800
+
 depanneur (0.15.5) unstable; urgency=high
 
   * Fix not to input sudo password at the end of gbs build

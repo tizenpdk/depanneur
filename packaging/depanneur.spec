@@ -12,6 +12,7 @@ Requires:       perl(JSON)
 Requires:       perl(HTML::Template)
 Requires:       perl(Config::Tiny)
 Requires:       tizen-build >= 20170630
+Requires:       libparallel-forkmanager-perl
 %if 0%{?centos_ver} == 7 || 0%{?suse_version} == 1315
 
 %else

@@ -32,6 +32,8 @@ use User::pwent qw(getpw);
 use POSIX qw(sysconf);
 use Config::Tiny;
 
+use Parallel::ForkManager;
+
 
 # Global vars
 
@@ -46,8 +48,6 @@ my $dirty:shared=0;
 
 my %export_packs:shared = ();
 my $export_lock:shared;
-my $SINGLE_SPEC = 1;
-my $MULTI_SPEC = 2;
 # Set the variable $File::Find::dont_use_nlink if you're using AFS,
 # since AFS cheats.
 
@@ -641,32 +641,37 @@ sub fill_packs_from_git {
             # realpath/packaging
             my $first_line = <$file>;
             if ($first_line =~ /^tree/) {  # packaging_dir is not a symbol link
+                my $specs = "";
                 while (<$file>) {
                     chomp;
                     next if $_ !~ /\.spec$/;
                     # if build specify --spec
                     next if $arg_spec ne "" && $_ ne $arg_spec;
-                    push(@pre_packs, {filename => "$base/$l_packaging_dir/$_",
-                                      project_base_path => $base,
-                                      packaging_dir => $l_packaging_dir,
-                                      upstream_branch => $l_upstream_branch,
-                                      upstream_tag => $l_upstream_tag});
+                    $specs = $specs . "$base/$l_packaging_dir/$_" . ",";
                 }
+                push(@pre_packs, {filename => "$specs",
+                                  project_base_path => $base,
+                                  packaging_dir => $l_packaging_dir,
+                                  upstream_branch => $l_upstream_branch,
+                                  upstream_tag => $l_upstream_tag});
+
             } else {        #packaging_dir is a symbol link
                 my (undef, $tmp_symlink_file) = tempfile(OPEN => 0);
                 # git show the real packaging dir
                 if (my_system("cd $base; git show $__commit:$first_line >$tmp_symlink_file 2>/dev/null") == 0) {
                     open my $symlink_file, '<', $tmp_symlink_file or die $!;
+                    my $specs;
                     while (<$symlink_file>) {
                         chomp;
                         next if $_ !~ /\.spec$/;
                         next if $arg_spec ne "" && $_ ne $arg_spec;
-                        push(@pre_packs, {filename => "$base/$first_line/$_",
-                                          project_base_path => $base,
-                                          packaging_dir => $l_packaging_dir,
-                                          upstream_branch => $l_upstream_branch,
-                                          upstream_tag => $l_upstream_tag});
+                        $specs = $specs . "$base/$first_line/$_" . ",";
                     }
+                    push(@pre_packs, {filename => "$specs",
+                                      project_base_path => $base,
+                                      packaging_dir => $l_packaging_dir,
+                                      upstream_branch => $l_upstream_branch,
+                                      upstream_tag => $l_upstream_tag});
                     close($symlink_file);
                     unlink $tmp_symlink_file;
                 }
@@ -679,13 +684,15 @@ sub fill_packs_from_git {
         my $pattern = "$base/$l_packaging_dir/*.spec";
         $pattern = "$base/$l_packaging_dir/$arg_spec" if $arg_spec ne "";
         my @spec_list = glob($pattern);
+        my $specs = "";
         foreach my $spec (@spec_list) {
-                push(@pre_packs, {filename => "$spec",
-                                  project_base_path => $base,
-                                  packaging_dir => $l_packaging_dir,
-                                  upstream_branch => $l_upstream_branch,
-                                  upstream_tag => $l_upstream_tag});
+                $specs = $specs . $spec . ",";
         }
+        push(@pre_packs, {filename => "$specs",
+                          project_base_path => $base,
+                          packaging_dir => $l_packaging_dir,
+                          upstream_branch => $l_upstream_branch,
+                          upstream_tag => $l_upstream_tag});
     }
 }
 
@@ -765,16 +772,8 @@ sub write_cache {
     my ($cache_key, $cache_val, $base, $spec, $packaging_dir, $upstream_branch, $upstream_tag) = @_;
     my $cache_fname = "$cache_path/$cache_key";
     my @export_out;
-    my $n = $export_packs{$base};
-    if ($n ne $SINGLE_SPEC) {
-        info("multi spec export in order:$base\t$spec");
-        {
-            lock($export_lock);
-            @export_out = gbs_export($base, $spec, $packaging_dir, $upstream_branch, $upstream_tag);
-        }
-    } else {
-            @export_out = gbs_export($base, $spec, $packaging_dir, $upstream_branch, $upstream_tag);
-    }
+
+    @export_out = gbs_export($base, $spec, $packaging_dir, $upstream_branch, $upstream_tag);
     if (shift @export_out) {
         # if export failed, collect export error to report
         push(@export_errors, {package_name => $cache_key,
@@ -831,86 +830,97 @@ sub query_git_commit_rev {
 sub prepare_git {
     my $config = shift;
     my $base = shift;
-    my $spec = shift;
+    my $specs = shift;
     my $packaging_dir = shift;
     my $upstream_branch = shift;
     my $upstream_tag = shift;
-    my $packs_queue = shift;
-    my $spec_file = basename($spec);
 
-    if ($includeall == 0 || $spec_commit ne "") {
-        # create temp directory and clean it autoly
-        my $tmp_dir = abs_path(tempdir(CLEANUP=>1));
-        my $tmp_spec = "$tmp_dir/$spec_file";
-        my $without_base;
-        # \Q and \E to keep the raw string not be escaped
-        $spec =~ s!\Q$base/\E!!;
-        $without_base = $spec;
-        if (my_system("cd $base; git show $spec_commit:$without_base >$tmp_spec 2>/dev/null") != 0) {
-            warning("failed to checkout spec file from commit: $spec_commit:$without_base");
-            return;
-        }
-        $spec = $tmp_spec;
-    }
+    my @packs_arr = ();
+    my @spec_list = split(",", $specs);
+    foreach my $spec (@spec_list) {
+        my $spec_file = basename($spec);
 
-    # parser the spec file
-    my $pack = Build::Rpm::parse($config, $spec);
-    if (! exists $pack->{name} || ! exists $pack->{version} || ! exists $pack->{release}) {
-        debug("failed to parse spec file: $spec, name,version,release fields must be present");
-        return;
-    }
-    my $pkg_name = $pack->{name};
-    my $pkg_version = $pack->{version};
-    my $pkg_release = $pack->{release};
-    my $cache_key = "$pkg_name-$pkg_version-$pkg_release";
-    my $cached_rev = read_cache($cache_key);
-    my $skip = 0;
-    my $current_rev = '';
-
-    if (! -e "$base/.git") {
-        warning("not a git repo: $base/.git!!");
-        return;
-    } else {
-        # check $commit whether exist
-        $current_rev = query_git_commit_rev($base, $commit);
-        # check cache and judge whether need export
-        $skip = ($cached_rev eq $current_rev) && (-e "$pkg_path/$cache_key/$spec_file");
-        $source_cache{"$base:$cached_rev"} = "$pkg_path/$cache_key" if ($skip);
-    }
-
-    # if package is not skipped or specify --incude-all
-    if (!$skip || $includeall == 1) {
-        # Set cache_rev as 'include-all' if --include-all specified
-        my $val = ($includeall == 1) ? "include-all" : $current_rev;
-        info("start export source from: $base ...");
-        if ($includeall != 1 && exists $source_cache{"$base:$current_rev"}) {
-            my $exported_key = basename($source_cache{"$base:$current_rev"});
-            # if one package have multiple spec files
-            # No need to export, just copy one
-            my_system("cp -r $pkg_path/$exported_key  $pkg_path/$cache_key");
-            my_system("cp -f $pkg_path/cache/$exported_key $pkg_path/cache/$cache_key");
-
-        } else {
-            # if it's failed to write cache
-            unless (write_cache($cache_key, $val, $base, $spec_file, $packaging_dir, $upstream_branch, $upstream_tag)) {
-                clean_cache($cache_key);
-                debug("$pkg_name was not exported correctly");
+        if ($includeall == 0 || $spec_commit ne "") {
+            # create temp directory and clean it autoly
+            my $tmp_dir = abs_path(tempdir(CLEANUP=>1));
+            my $tmp_spec = "$tmp_dir/$spec_file";
+            my $without_base;
+            # \Q and \E to keep the raw string not be escaped
+            $spec =~ s!\Q$base/\E!!;
+            $without_base = $spec;
+            if (my_system("cd $base; git show $spec_commit:$without_base >$tmp_spec 2>/dev/null") != 0) {
+                warning("failed to checkout spec file from commit: $spec_commit:$without_base");
                 return;
             }
+            $spec = $tmp_spec;
         }
-        $source_cache{"$base:$current_rev"} = "$pkg_path/$cache_key";
+
+        # parser the spec file
+        my $pack = Build::Rpm::parse($config, $spec);
+        if (! exists $pack->{name} || ! exists $pack->{version} || ! exists $pack->{release}) {
+            debug("failed to parse spec file: $spec, name,version,release fields must be present");
+            return;
+        }
+        my $pkg_name = $pack->{name};
+        my $pkg_version = $pack->{version};
+        my $pkg_release = $pack->{release};
+        my $cache_key = "$pkg_name-$pkg_version-$pkg_release";
+        my $cached_rev = read_cache($cache_key);
+        my $skip = 0;
+        my $current_rev = '';
+
+        if (! -e "$base/.git") {
+            warning("not a git repo: $base/.git!!");
+            return;
+        } else {
+            # check $commit whether exist
+            $current_rev = query_git_commit_rev($base, $commit);
+            # check cache and judge whether need export
+            $skip = ($cached_rev eq $current_rev) && (-e "$pkg_path/$cache_key/$spec_file");
+            $source_cache{"$base:$cached_rev"} = "$pkg_path/$cache_key" if ($skip);
+        }
+
+        # if package is not skipped or specify --incude-all
+        if (!$skip || $includeall == 1) {
+            # Set cache_rev as 'include-all' if --include-all specified
+            my $val = ($includeall == 1) ? "include-all" : $current_rev;
+            info("start export source from: $base ...");
+            if ($includeall != 1 && exists $source_cache{"$base:$current_rev"}) {
+                my $exported_key = basename($source_cache{"$base:$current_rev"});
+                # if one package have multiple spec files
+                # No need to export, just copy one
+                my_system("cp -r $pkg_path/$exported_key  $pkg_path/$cache_key");
+                my_system("cp -f $pkg_path/cache/$exported_key $pkg_path/cache/$cache_key");
+
+            } else {
+                # if it's failed to write cache
+                unless (write_cache($cache_key, $val, $base, $spec_file, $packaging_dir, $upstream_branch, $upstream_tag)) {
+                    clean_cache($cache_key);
+                    debug("$pkg_name was not exported correctly");
+                    return;
+                }
+            }
+            $source_cache{"$base:$current_rev"} = "$pkg_path/$cache_key";
+        }
+
+        # check whether it's really successful to export
+        if ( -e "$pkg_path/$cache_key/$spec_file" ){
+            # prepare to build the packages had been exported
+            my $pack;
+            $pack->{'filename'} = "$pkg_path/$cache_key/$spec_file";
+            $pack->{'project_base_path'} = $base;
+            push @packs_arr, $pack;
+            #$packs_queue->enqueue({
+            #    filename => "$pkg_path/$cache_key/$spec_file",
+            #    project_base_path => $base,
+            #});
+        }else{
+            warning("spec file $spec_file has not been exported to $pkg_path/$cache_key/ correctly,".
+                    " please check if there're special macros in Name/Version/Release fields");
+        }
     }
-    # check whether it's really successful to export
-    if ( -e "$pkg_path/$cache_key/$spec_file" ){
-        # prepare to build the packages had been exported
-        $packs_queue->enqueue({
-            filename => "$pkg_path/$cache_key/$spec_file",
-            project_base_path => $base,
-        });
-    }else{
-        warning("spec file $spec_file has not been exported to $pkg_path/$cache_key/ correctly,".
-                " please check if there're special macros in Name/Version/Release fields");
-    }
+
+    return @packs_arr;
 }
 
 #---------------------------------------------------------------------
@@ -2350,8 +2360,7 @@ if ($style eq 'git') {
         info("prepare sources...");
         read_not_export($not_export_cf);
 
-	my $packs_queue = Thread::Queue->new();
-	my $data_queue = Thread::Queue->new();
+	my @data_queue = ();
 	foreach my $pack (@pre_packs) {
                 if ($not_export_source == 1) {
                     my $name = basename($pack->{"project_base_path"});
@@ -2364,47 +2373,42 @@ if ($style eq 'git') {
                         push @packs, $pack;
                     } else {
                         info("package $name not support skip export source");
-                        $data_queue->enqueue($pack);
-                        my $lock_name = $pack->{"project_base_path"};
-                        if (exists $export_packs{$lock_name}) {
-                            $export_packs{$lock_name} = $MULTI_SPEC;
-                        } else {
-                            $export_packs{$lock_name} = $SINGLE_SPEC;
-                        }
+			push @data_queue, $pack;
                     }
                 } else {
-                    $data_queue->enqueue($pack);
-                    my $lock_name = $pack->{"project_base_path"};
-                    if (exists $export_packs{$lock_name}) {
-                        $export_packs{$lock_name} = $MULTI_SPEC;
-                    } else {
-                        $export_packs{$lock_name} = $SINGLE_SPEC;
-                    }
+		    push @data_queue, $pack;
                 }
 	}
 
-	my $thread_num = int(sysconf(SC_NPROCESSORS_ONLN));
-	for (0..$thread_num) {
-		$data_queue->enqueue(undef);
-		threads->create(sub {
-			while (my $pack = $data_queue->dequeue()) {
-				prepare_git($config, $pack->{"project_base_path"}, $pack->{"filename"},
-                    $pack->{"packaging_dir"}, $pack->{"upstream_branch"}, $pack->{"upstream_tag"}, $packs_queue);
-			}
-		});
-	}
-	foreach (threads->list()) { $_->join(); }
-	# Check error
-	foreach (threads->list()) {
-		if (my $chk_err = $_->error()){
-			warning("export thread error: $chk_err\n");
-		}
-	}
-	$packs_queue->enqueue(undef);
-	while (my $pack = $packs_queue->dequeue()) {
-		push @packs, $pack;
-	}
-
+        my $thread_num = int(sysconf(SC_NPROCESSORS_ONLN));
+        if ($thread_num > 28) {
+            $thread_num = 28;
+        }
+        my $pm = Parallel::ForkManager->new($thread_num);
+        my %export_ret = ();
+        $pm->run_on_finish (
+            sub {
+                my ($pid, $exit_code, $ident, $exit_signal, $core_dump, $data_structure_reference) = @_;
+                if (defined($data_structure_reference)) {
+                    $export_ret{$ident} = $data_structure_reference;
+                }
+            }
+        );
+        DATA_LOOP:
+        foreach my $pack (@data_queue) {
+            my $pid = $pm->start($pack->{"filename"}) and next DATA_LOOP;
+            my @packs_arr = ();
+            @packs_arr = prepare_git($config, $pack->{"project_base_path"}, $pack->{"filename"},
+                    $pack->{"packaging_dir"}, $pack->{"upstream_branch"}, $pack->{"upstream_tag"});
+            $pm->finish(0, \@packs_arr);
+        }
+        $pm->wait_all_children;
+        foreach my $key (keys %export_ret) {
+            my $arr = $export_ret{$key};
+            foreach my $pack (@{$arr}) {
+                push @packs, $pack;
+            }
+        }
     } else {
         @packs = @pre_packs;
     }

@@ -1804,14 +1804,15 @@ sub update_repo_with_rpms {
     # $2: list of package full path
     my ($ref_hash, @pkgs) = @_;
     foreach my $pkg (@pkgs) {
-        my ($name, $version, $release) = get_pkg_info $pkg;
+        my ($name, $version, $release, $arch) = get_pkg_info $pkg;
         next if $name eq '';
-        if (exists $ref_hash->{$name}) {
-            foreach (@{$ref_hash->{$name}}) {
+        my $na = "$name$arch";
+        if (exists $ref_hash->{$na}) {
+            foreach (@{$ref_hash->{$na}}) {
                 my_system("rm -rf $_");
             }
         }
-        $ref_hash->{$name} = [$pkg];
+        $ref_hash->{$na} = [$pkg];
     }
 }
 
@@ -2558,12 +2559,13 @@ for(my $i = 0; $i < $MAX_THREADS; $i++) {
 
 # scan local repo
 for my $pkg (bsd_glob "$rpm_repo_path/*.rpm") {
-    my ($name, $version, $release) = get_pkg_info $pkg;
+    my ($name, $version, $release, $arch) = get_pkg_info $pkg;
     next if $name eq '';
-    if (exists $rpmpaths{$name}) {
-        push @{$rpmpaths{$name}}, $pkg;
+    my $na = "$name$arch";
+    if (exists $rpmpaths{$na}) {
+        push @{$rpmpaths{$na}}, $pkg;
     } else {
-        $rpmpaths{$name} = [$pkg];
+        $rpmpaths{$na} = [$pkg];
     }
 }
 for my $pkg (bsd_glob "$srpm_repo_path/*.rpm") {

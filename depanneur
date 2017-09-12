@@ -649,11 +649,13 @@ sub fill_packs_from_git {
                     next if $arg_spec ne "" && $_ ne $arg_spec;
                     $specs = $specs . "$base/$l_packaging_dir/$_" . ",";
                 }
-                push(@pre_packs, {filename => "$specs",
-                                  project_base_path => $base,
-                                  packaging_dir => $l_packaging_dir,
-                                  upstream_branch => $l_upstream_branch,
-                                  upstream_tag => $l_upstream_tag});
+                if ($specs ne "") {
+                    push(@pre_packs, {filename => "$specs",
+                                      project_base_path => $base,
+                                      packaging_dir => $l_packaging_dir,
+                                      upstream_branch => $l_upstream_branch,
+                                      upstream_tag => $l_upstream_tag});
+                }
 
             } else {        #packaging_dir is a symbol link
                 my (undef, $tmp_symlink_file) = tempfile(OPEN => 0);
@@ -667,11 +669,13 @@ sub fill_packs_from_git {
                         next if $arg_spec ne "" && $_ ne $arg_spec;
                         $specs = $specs . "$base/$first_line/$_" . ",";
                     }
-                    push(@pre_packs, {filename => "$specs",
-                                      project_base_path => $base,
-                                      packaging_dir => $l_packaging_dir,
-                                      upstream_branch => $l_upstream_branch,
-                                      upstream_tag => $l_upstream_tag});
+                    if ($specs ne "") {
+                        push(@pre_packs, {filename => "$specs",
+                                          project_base_path => $base,
+                                          packaging_dir => $l_packaging_dir,
+                                          upstream_branch => $l_upstream_branch,
+                                          upstream_tag => $l_upstream_tag});
+                    }
                     close($symlink_file);
                     unlink $tmp_symlink_file;
                 }
@@ -688,11 +692,13 @@ sub fill_packs_from_git {
         foreach my $spec (@spec_list) {
                 $specs = $specs . $spec . ",";
         }
-        push(@pre_packs, {filename => "$specs",
-                          project_base_path => $base,
-                          packaging_dir => $l_packaging_dir,
-                          upstream_branch => $l_upstream_branch,
-                          upstream_tag => $l_upstream_tag});
+        if ($specs ne "") {
+            push(@pre_packs, {filename => "$specs",
+                              project_base_path => $base,
+                              packaging_dir => $l_packaging_dir,
+                              upstream_branch => $l_upstream_branch,
+                              upstream_tag => $l_upstream_tag});
+        }
     }
 }
 
@@ -2350,9 +2356,14 @@ $gbs_version =~ s!gbs !!;
 
 if ($style eq 'git') {
     File::Find::find({wanted => \&git_wanted}, $package_path );
-    if (@pre_packs > 1 && $commit ne "HEAD"){
-        error("--commit option can't be specified with multiple packages");
+    foreach my $p (@pre_packs) {
+       my $specs = $p->{"filename"};
+       my @spec_list = split(",", $specs);
+       if (@spec_list > 1 && $commit ne "HEAD"){
+           error("--commit option can't be specified with multiple packages");
+       }
     }
+
     if (@pre_packs == 0) {
         error("No source package found at $package_path");
     }
@@ -2410,7 +2421,19 @@ if ($style eq 'git') {
             }
         }
     } else {
-        @packs = @pre_packs;
+        foreach my $p (@pre_packs) {
+            my $specs = $p->{"filename"};
+            my $new_p;
+            $new_p->{"project_base_path"} = $p->{"project_base_path"};
+            $new_p->{"packaging_dir"} = $p->{"packaging_dir"};
+            $new_p->{"upstream_branch"} = $p->{"upstream_branch"};
+            $new_p->{"upstream_tag"} = $p->{"upstream_tag"};
+            my @spec_list = split(",", $specs);
+            foreach my $spec (@spec_list) {
+                $new_p->{"filename"} = $spec;
+                push @packs, $new_p;
+            }
+        }
     }
 } else {
     @packs = @ARGV;

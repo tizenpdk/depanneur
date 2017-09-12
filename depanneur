@@ -2596,12 +2596,13 @@ for my $pkg (bsd_glob "$rpm_repo_path/*.rpm") {
     }
 }
 for my $pkg (bsd_glob "$srpm_repo_path/*.rpm") {
-    my ($name, $version, $release) = get_pkg_info $pkg;
+    my ($name, $version, $release, $arch) = get_pkg_info $pkg;
     next if $name eq '';
-    if (exists $srpmpaths{$name}) {
-        push @{$srpmpaths{$name}}, $pkg;
+    my $na = "$name$arch";
+    if (exists $srpmpaths{$na}) {
+        push @{$srpmpaths{$na}}, $pkg;
     } else {
-        $srpmpaths{$name} = [$pkg];
+        $srpmpaths{$na} = [$pkg];
     }
 }
 

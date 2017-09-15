@@ -1,3 +1,9 @@
+depanneur (0.15.8) unstable; urgency=high
+
+  *Upgrade to 0.15.8
+
+ -- Wang Jun <junbill.wang@samsung.com>  Fri, 15 Sep 2017 12:00:00 +0800
+
 depanneur (0.15.7) unstable; urgency=high
 
   *Upgrade to 0.15.7

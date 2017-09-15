@@ -2381,7 +2381,17 @@ if ($style eq 'git') {
                     }
                     if ($r) {
                         info("skip export $name for accel...");
-                        push @packs, $pack;
+                        my $specs = $pack->{"filename"};
+                        my $new_p;
+                        $new_p->{"project_base_path"} = $pack->{"project_base_path"};
+                        $new_p->{"packaging_dir"} = $pack->{"packaging_dir"};
+                        $new_p->{"upstream_branch"} = $pack->{"upstream_branch"};
+                        $new_p->{"upstream_tag"} = $pack->{"upstream_tag"};
+                        my @spec_list = split(",", $specs);
+                        foreach my $spec (@spec_list) {
+                            $new_p->{"filename"} = $spec;
+                            push @packs, $new_p;
+                        }
                     } else {
                         info("package $name not support skip export source");
 			push @data_queue, $pack;

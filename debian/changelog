@@ -1,3 +1,9 @@
+depanneur (0.15.7) unstable; urgency=high
+
+  *Upgrade to 0.15.7
+
+ -- Zhang Yang <y0169.zhang@samsung.com>  Fri, 30 Jun 2017 12:00:00 +0800
+
 depanneur (0.15.6) unstable; urgency=high
 
   *Upgrade to 0.15.6

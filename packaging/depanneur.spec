@@ -1,6 +1,6 @@
 Name:           depanneur
 Summary:        Manages and executes the builds using the obs-build script.
-Version:        0.15.6
+Version:        0.15.7
 Release:        1
 License:        GPL-2.0+
 Group:          Development/Tools
@@ -11,9 +11,9 @@ Requires:       perl(YAML)
 Requires:       perl(JSON)
 Requires:       perl(HTML::Template)
 Requires:       perl(Config::Tiny)
-Requires:       tizen-build >= 20170428
+Requires:       tizen-build >= 20170630
 %ifarch         x86_64
-Requires:       tizen-build-initvm-x86_64 >= 20170428
+Requires:       tizen-build-initvm-x86_64 >= 20170630
 %endif
 
 %if 0%{?suse_version}

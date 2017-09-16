@@ -12,6 +12,7 @@ Requires:       perl(JSON)
 Requires:       perl(HTML::Template)
 Requires:       perl(Config::Tiny)
 Requires:       tizen-build >= 20170630
+Requires:       libparallel-forkmanager-perl
 %ifarch         x86_64
 Requires:       tizen-build-initvm-x86_64 >= 20170630
 %endif

@@ -721,10 +721,10 @@ sub gbs_export {
         push @args, "--commit=$commit";
     }
     if (! $upstream_branch eq "") {
-        push @args, "--upstream-branch=$upstream_branch";
+        push @args, "--upstream-branch='$upstream_branch'";
     }
     if (! $upstream_tag eq "") {
-        push @args, "--upstream-tag=$upstream_tag";
+        push @args, "--upstream-tag='$upstream_tag'";
     }
     if ($fallback_to_native == 1) {
         push @args, "--fallback-to-native";

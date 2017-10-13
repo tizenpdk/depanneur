@@ -1,3 +1,12 @@
+depanneur (0.15.9) unstable; urgency=high
+
+  *Upgrade to 0.15.9
+  *Prevent shell interpolation of gbs configuration variables,
+   when using special variable such like “upstream_tag = v${upstreamversion}”
+   which gbs can't get upstreamversion well
+
+ -- Ren Jingui <jingui.ren@samsung.com>  Fri, 13 Oct 2017 11:30:00 +0800
+
 depanneur (0.15.8) unstable; urgency=high
 
   *Upgrade to 0.15.8

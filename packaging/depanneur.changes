@@ -1,3 +1,9 @@
+* Fri Oct 13 2017 Ren Jingui <jingui.ren@samsung.com> 0.15.9
+- Upgrade to 0.15.9
+- Prevent shell interpolation of gbs configuration variables,
+  when using special variable such like “upstream_tag = v${upstreamversion} ”
+  which gbs can't get upstreamversion well
+
 * Fri Sep 15 2017 Wang jun <junbill.wang@samsung.com> 0.15.8
 - Upgrade to 0.15.8
 
